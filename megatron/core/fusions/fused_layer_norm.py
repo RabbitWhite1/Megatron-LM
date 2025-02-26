@@ -20,12 +20,14 @@ except ImportError:
     HAVE_PERSIST_LAYER_NORM = False
 
 try:
-    from apex.normalization.fused_layer_norm import FusedLayerNormAffineFunction
+    from apex.normalization.fused_layer_norm import FusedLayerNormAffineFunction, fused_layer_norm_affine_fwd
 
     HAVE_FUSED_LAYER_NORM = True
 except ImportError:
     HAVE_FUSED_LAYER_NORM = False
 
+
+import torchgraph as tg
 
 class FusedLayerNorm(torch.nn.Module):
     """Layer Norm, fused into a single CUDA kernel.
@@ -149,7 +151,7 @@ class FusedLayerNorm(torch.nn.Module):
             )
 
         else:
-            if (
+            if not tg.USING_DYNAMO and (
                 'memory_efficient'
                 in inspect.getfullargspec(FusedLayerNormAffineFunction.forward).args
             ):
@@ -161,6 +163,11 @@ class FusedLayerNorm(torch.nn.Module):
                     self.eps,
                     self.config.memory_efficient_layer_norm,
                 )
+            elif tg.USING_DYNAMO:
+                output, _, _ = fused_layer_norm_affine_fwd(
+                    input, weight, self.bias, self.hidden_size, self.eps
+                )
+                return output
             else:
                 return FusedLayerNormAffineFunction.apply(
                     input, weight, self.bias, self.hidden_size, self.eps

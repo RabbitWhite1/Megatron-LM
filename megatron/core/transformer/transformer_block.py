@@ -19,6 +19,8 @@ from megatron.core.transformer.transformer_layer import BaseTransformerLayer, Tr
 from megatron.core.transformer.utils import sharded_state_dict_default
 from megatron.core.utils import is_te_min_version, make_viewless_tensor
 
+import torchgraph as tg
+
 try:
     from megatron.core.extensions.transformer_engine import (
         TEDelayedScaling,
@@ -498,7 +500,7 @@ class TransformerBlock(MegatronModule):
         #   is called here to be future-proof and corner-case-proof.
         hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
 
-        if self.config.sequence_parallel:
+        if not tg.USING_DYNAMO and self.config.sequence_parallel:
             rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
         else:
             rng_context = nullcontext()
@@ -544,7 +546,8 @@ class TransformerBlock(MegatronModule):
             else:
                 for l_no, layer in enumerate(self.layers):
                     with self.offload_context:
-                        layer.use_cudagraph = True
+                        if not tg.USING_DYNAMO:
+                            layer.use_cudagraph = True
                         if (len(self.cuda_graphs) == 0) or (not self.training):
                             hidden_states, context = layer(
                                 hidden_states=hidden_states,

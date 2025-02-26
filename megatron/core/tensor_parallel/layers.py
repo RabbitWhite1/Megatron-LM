@@ -37,6 +37,9 @@ from .mappings import (
 from .random import get_cuda_rng_tracker, get_expert_parallel_rng_tracker_name
 from .utils import VocabUtility, divide
 
+import torchgraph as tg
+from torchgraph.graph.export.tools import *
+
 _grad_accum_fusion_available = True
 try:
     import fused_weight_gradient_mlp_cuda
@@ -430,9 +433,12 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             dim_size = list(input.size())
             dim_size[0] = dim_size[0] * world_size
 
-            all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
-            dist_all_gather_func(all_gather_buffer, input, group=get_tensor_model_parallel_group())
-            total_input = all_gather_buffer
+            if tg.USING_DYNAMO:
+                total_input = fdist.all_gather_tensor(input, gather_dim=0, group=get_tensor_model_parallel_group())
+            else:
+                all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
+                dist_all_gather_func(all_gather_buffer, input, group=get_tensor_model_parallel_group())
+                total_input = all_gather_buffer
         else:
             total_input = input
 
@@ -462,22 +468,29 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                 dim_size = list(input.size())
                 dim_size[0] = dim_size[0] * world_size
 
-                all_gather_buffer = get_global_memory_buffer().get_tensor(
-                    dim_size, input.dtype, "mpu"
-                )
-                handle = dist_all_gather_func(
-                    all_gather_buffer, input, group=get_tensor_model_parallel_group(), async_op=True
-                )
+                if tg.USING_DYNAMO:
+                    handle = fdist.all_gather_tensor(input, gather_dim=0, group=get_tensor_model_parallel_group())
+                    total_input = fdist.wait_tensor(handle)
+                else:
+                    all_gather_buffer = get_global_memory_buffer().get_tensor(
+                        dim_size, input.dtype, "mpu"
+                    )
+                    handle = dist_all_gather_func(
+                        all_gather_buffer, input, group=get_tensor_model_parallel_group(), async_op=True
+                    )
 
-                # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
-                # gather is scheduled before the input gradient computation
-                total_input = all_gather_buffer
+                    # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
+                    # gather is scheduled before the input gradient computation
+                    total_input = all_gather_buffer
             else:
                 total_input = input
         grad_input = grad_output.matmul(weight)
 
         if ctx.sequence_parallel and wgrad_compute:
-            handle.wait()
+            if is_fdist_handle(handle):
+                total_input = fdist.wait_tensor(handle)
+            elif type(handle) is not torch.Tensor:
+                handle.wait()
 
         if wgrad_compute:
             grad_output, total_input = prepare_input_tensors_for_wgrad_compute(
@@ -486,22 +499,32 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.allreduce_dgrad:
             # Asynchronous all-reduce
-            handle = torch.distributed.all_reduce(
-                grad_input, group=get_tensor_model_parallel_group(), async_op=True
-            )
+            if tg.USING_DYNAMO:
+                handle = fdist.all_reduce(grad_input, reduceOp="sum", group=get_tensor_model_parallel_group())
+            else:
+                handle = torch.distributed.all_reduce(
+                    grad_input, group=get_tensor_model_parallel_group(), async_op=True
+                )
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # all-reduce is scheduled before the weight gradient computation
 
         if ctx.sequence_parallel:
             assert not ctx.allreduce_dgrad
+            if tg.USING_DYNAMO:
+                device = input.device
+            else:
+                device = torch.cuda.current_device()
             dim_size = list(input.size())
             sub_grad_input = torch.empty(
-                dim_size, dtype=input.dtype, device=torch.cuda.current_device(), requires_grad=False
+                dim_size, dtype=input.dtype, device=device, requires_grad=False
             )
             # reduce_scatter
-            handle = dist_reduce_scatter_func(
-                sub_grad_input, grad_input, group=get_tensor_model_parallel_group(), async_op=True
-            )
+            if tg.USING_DYNAMO:
+                handle = fdist.reduce_scatter_tensor(grad_input, reduceOp="sum", scatter_dim=0, group=get_tensor_model_parallel_group())
+            else:
+                handle = dist_reduce_scatter_func(
+                    sub_grad_input, grad_input, group=get_tensor_model_parallel_group(), async_op=True
+                )
             # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the
             # reduce scatter is scheduled before the weight gradient computation
 
@@ -545,13 +568,19 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         grad_bias = grad_output.sum(dim=0) if use_bias else None
 
         if ctx.sequence_parallel:
-            handle.wait()
+            if is_fdist_handle(handle):
+                sub_grad_input = fdist.wait_tensor(handle)
+            elif type(handle) is not torch.Tensor:
+                handle.wait()
             # Need to return None's as gradient has to flow for all the input arguments
             # provided during forward
             return sub_grad_input, grad_weight, grad_bias, None, None, None, None, None
 
         if ctx.allreduce_dgrad:
-            handle.wait()
+            if is_fdist_handle(handle):
+                grad_input = fdist.wait_tensor(handle)
+            elif type(handle) is not torch.Tensor:
+                handle.wait()
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None
 
@@ -647,7 +676,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
         wgrad_deferral_limit,
     ]
 
-    if not linear_with_grad_accumulation_and_async_allreduce.warned:
+    if not tg.USING_DYNAMO and not linear_with_grad_accumulation_and_async_allreduce.warned:
         if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
             if sequence_parallel:
                 warnings.warn(

@@ -10,6 +10,9 @@ from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
 
 
+import torchgraph as tg
+
+
 class LanguageModelEmbedding(MegatronModule):
     """Language model embeddings.
 
@@ -135,8 +138,11 @@ class LanguageModelEmbedding(MegatronModule):
             # Has a small runtime cost (~0.5%).
             if self.config.clone_scatter_output_in_embedding and self.scatter_to_sequence_parallel:
                 embeddings = embeddings.clone()
-            with tensor_parallel.get_cuda_rng_tracker().fork():
+            if tg.USING_DYNAMO:
                 embeddings = self.embedding_dropout(embeddings)
+            else:
+                with tensor_parallel.get_cuda_rng_tracker().fork():
+                    embeddings = self.embedding_dropout(embeddings)
         else:
             embeddings = self.embedding_dropout(embeddings)
 

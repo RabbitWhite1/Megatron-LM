@@ -4,6 +4,7 @@ import contextlib
 from typing import Iterator, List, Union
 
 import torch
+import torchgraph as tg
 from torch.autograd.variable import Variable
 
 from megatron.core import parallel_state
@@ -250,7 +251,7 @@ def forward_step(
         Tensor or list[Tensor]: The output object(s) from the forward step.
         Tensor: The number of tokens.
     """
-    if config.timers is not None:
+    if not tg.USING_DYNAMO and config.timers is not None:
         config.timers('forward-compute', log_level=2).start()
 
     if is_first_microbatch and hasattr(model, 'set_is_first_microbatch'):
@@ -266,7 +267,7 @@ def forward_step(
     set_input_tensor = get_attr_wrapped_model(model, "set_input_tensor")
     set_input_tensor(input_tensor)
 
-    if config.enable_autocast:
+    if not tg.USING_DYNAMO and config.enable_autocast:
         context_manager = torch.autocast("cuda", dtype=config.autocast_dtype)
     else:
         context_manager = contextlib.nullcontext()
@@ -297,13 +298,13 @@ def forward_step(
             data = loss_func(output_tensor, non_loss_data=True)
             forward_data_store.append(data)
 
-    if config.timers is not None:
+    if not tg.USING_DYNAMO and config.timers is not None:
         config.timers('forward-compute').stop()
 
     # Set the loss scale for the auxiliary loss of the MoE layer.
     # Since we use a trick to do backward on the auxiliary loss, we need to set the scale
     # explicitly.
-    if hasattr(config, 'num_moe_experts') and config.num_moe_experts is not None:
+    if not tg.USING_DYNAMO and hasattr(config, 'num_moe_experts') and config.num_moe_experts is not None:
         # Calculate the loss scale based on the grad_scale_func if available, else default to 1.
         loss_scale = (
             config.grad_scale_func(torch.ones(1, device=output_tensor.device))
@@ -429,17 +430,22 @@ def forward_backward_no_pipelining(
     if isinstance(model, list):
         assert len(model) == 1, "non-pipeline-parallel schedule does not support model chunking"
         model = model[0]
-    if isinstance(data_iterator, list):
-        assert (
-            len(data_iterator) == 1
-        ), "non-pipeline-parallel schedule does not support model chunking"
-        data_iterator = data_iterator[0]
+    if tg.USING_DYNAMO:
+        assert type(data_iterator) is list
+    else:
+        if isinstance(data_iterator, list):
+            assert (
+                len(data_iterator) == 1
+            ), "non-pipeline-parallel schedule does not support model chunking"
+            data_iterator = data_iterator[0]
 
     config = get_model_config(model)
-    if config.timers is not None:
+    if not tg.USING_DYNAMO and config.timers is not None:
         config.timers('forward-backward', log_level=1).start(barrier=config.barrier_with_L1_time)
 
     no_sync_func = config.no_sync_func
+    if tg.USING_DYNAMO:
+        assert no_sync_func is None, "no_sync_func is not supported in Dynamo"
     if no_sync_func is None:
         no_sync_func = contextlib.nullcontext
 
@@ -482,7 +488,8 @@ def forward_backward_no_pipelining(
         ),
         current_microbatch=num_microbatches - 1,
     )
-    total_num_tokens += num_tokens.item()
+    if not tg.USING_DYNAMO:
+        total_num_tokens += num_tokens.item()
 
     if not forward_only:
         backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config)

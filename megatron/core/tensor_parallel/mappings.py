@@ -12,6 +12,8 @@ from megatron.core.utils import is_torch_min_version
 
 from .utils import split_tensor_along_last_dim
 
+import torchgraph as tg
+
 if is_torch_min_version("1.13.0"):
     dist_all_gather_func = torch.distributed.all_gather_into_tensor
     dist_reduce_scatter_func = torch.distributed.reduce_scatter_tensor
@@ -133,20 +135,24 @@ def _gather_along_first_dim(input_, group=None, output_split_sizes=None, use_glo
         return input_
 
     dim_size = list(input_.size())
+    if tg.USING_DYNAMO:
+        device = input_.device
+    else:
+        device = torch.cuda.current_device()
     if output_split_sizes is None:
         dim_size[0] = dim_size[0] * world_size
 
         if use_global_buffer:
             output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
         else:
-            output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
+            output = torch.empty(dim_size, dtype=input_.dtype, device=device)
         dist_all_gather_func(output, input_.contiguous(), group=group)
     else:
         dim_size[0] = sum(output_split_sizes)
         if use_global_buffer:
             output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
         else:
-            output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
+            output = torch.empty(dim_size, dtype=input_.dtype, device=device)
         output_tensor_list = list(torch.split(output, output_split_sizes, dim=0))
         torch.distributed.all_gather(output_tensor_list, input_, group=group)
 
@@ -179,7 +185,9 @@ def _reduce_scatter_along_first_dim(
 
         dim_size[0] = dim_size[0] // world_size
 
-        if use_global_buffer:
+        if tg.USING_DYNAMO:
+            output = torch.empty(dim_size, dtype=input_.dtype, device=input_.device)
+        elif use_global_buffer:
             output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
         else:
             output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
@@ -188,7 +196,9 @@ def _reduce_scatter_along_first_dim(
         rank = torch.distributed.get_rank(group)
         input_tensor_list = list(torch.split(input_, input_split_sizes, dim=0))
 
-        if use_global_buffer:
+        if tg.USING_DYNAMO:
+            output = torch.empty_like(input_tensor_list[rank])
+        elif use_global_buffer:
             output = get_global_memory_buffer().get_tensor(
                 input_tensor_list[rank].shape, input_.dtype, "mpu"
             )
