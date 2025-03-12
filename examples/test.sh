@@ -42,4 +42,8 @@ export TP_SIZE=2
 # export nproc_per_node=4
 # export TP_SIZE=4
 
+# export TG_DUMP_DIRNAME=gpt/paral8
+# export nproc_per_node=8
+# export TP_SIZE=8
+
 PYTHONPATH=$PYTHON_PATH:./megatron TORCHRUN --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=$TP_SIZE 

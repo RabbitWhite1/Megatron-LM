@@ -20,7 +20,7 @@ from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.training.tokenizer.tokenizer import _NullTokenizer
 
-_SEQUENCE_LENGTH = 64
+_SEQUENCE_LENGTH = 512
 
 
 def initialize_distributed(tensor_model_parallel_size=1, pipeline_model_parallel_size=1):
@@ -38,13 +38,13 @@ def initialize_distributed(tensor_model_parallel_size=1, pipeline_model_parallel
     )
 
 
-def model_provider(tensor_model_parallel_size=1):
+def model_provider(num_layers=1, tensor_model_parallel_size=1):
     """Build the model."""
 
     transformer_config = TransformerConfig(
-        num_layers=1,
-        hidden_size=12,
-        num_attention_heads=4,
+        num_layers=num_layers,
+        hidden_size=128,
+        num_attention_heads=16,
         use_cpu_initialization=True,
         pipeline_dtype=torch.float32,
         sequence_parallel=tensor_model_parallel_size > 1,
@@ -115,13 +115,14 @@ def forward_step_func(data_iterator, model):
 
 parser = argparse.ArgumentParser("Simple GPT")
 parser.add_argument("--tp_size", default=1, type=int)
+parser.add_argument("--num_layers", default=1, type=int)
 
 if __name__ == "__main__":
     args = parser.parse_args()
     initialize_distributed(tensor_model_parallel_size=args.tp_size, pipeline_model_parallel_size=1)
     model_parallel_cuda_manual_seed(123)
 
-    gpt_model = model_provider(tensor_model_parallel_size=args.tp_size)
+    gpt_model = model_provider(num_layers=args.num_layers, tensor_model_parallel_size=args.tp_size)
     device = torch.device("cuda")
     gpt_model.to(device)
 
