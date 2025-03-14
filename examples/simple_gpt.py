@@ -20,7 +20,7 @@ from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.training.tokenizer.tokenizer import _NullTokenizer
 
-_SEQUENCE_LENGTH = 512
+_SEQUENCE_LENGTH = 1536
 
 
 def initialize_distributed(tensor_model_parallel_size=1, pipeline_model_parallel_size=1):
@@ -43,8 +43,8 @@ def model_provider(num_layers=1, tensor_model_parallel_size=1):
 
     transformer_config = TransformerConfig(
         num_layers=num_layers,
-        hidden_size=128,
-        num_attention_heads=16,
+        hidden_size=768,
+        num_attention_heads=24,
         use_cpu_initialization=True,
         pipeline_dtype=torch.float32,
         sequence_parallel=tensor_model_parallel_size > 1,
@@ -55,7 +55,7 @@ def model_provider(num_layers=1, tensor_model_parallel_size=1):
     gpt_model = GPTModel(
         config=transformer_config,
         transformer_layer_spec=get_gpt_layer_local_spec(),
-        vocab_size=163840,
+        vocab_size=98304,
         max_sequence_length=_SEQUENCE_LENGTH,
     )
 
