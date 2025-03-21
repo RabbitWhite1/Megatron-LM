@@ -30,24 +30,18 @@ export TG_USE_COMPILER_DISABLE=0
 
 export TG_USING_DYNAMO=1
 
-export TG_DUMP_DIRNAME=gpt/paral1
-export nproc_per_node=1
-export TP_SIZE=1
+for num_layers in 1 2 4 8 12 16
+do
+    for world_size in 1 2 4 6 8
+    do
+        export TG_DUMP_DIRNAME=gpt/paral${world_size}_layer${num_layers}
+        export nproc_per_node=${world_size}
+        export TP_SIZE=${world_size}
 
-# export TG_DUMP_DIRNAME=gpt/paral2
-# export nproc_per_node=2
-# export TP_SIZE=2
-
-# export TG_DUMP_DIRNAME=gpt/paral4
-# export nproc_per_node=4
-# export TP_SIZE=4
-
-# export TG_DUMP_DIRNAME=gpt/paral6
-# export nproc_per_node=6
-# export TP_SIZE=6
-
-# export TG_DUMP_DIRNAME=gpt/paral8
-# export nproc_per_node=8
-# export TP_SIZE=8
-
-PYTHONPATH=$PYTHON_PATH:./megatron TORCHRUN --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=$TP_SIZE 
+        PYTHONPATH=$PYTHON_PATH:./megatron TORCHRUN --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=$TP_SIZE --num_layers=${num_layers}
+        if [ $? -ne 0 ]; then
+            echo "Failed to run with num_layers=${num_layers} and world_size=${world_size}."
+            exit 1
+        fi
+    done
+done
