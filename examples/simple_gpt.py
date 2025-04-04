@@ -9,12 +9,16 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchgraph.graph.dynamo.tools import dynamo_and_dump
 
+from megatron.core import parallel_state
 from megatron.core import dist_checkpointing, parallel_state
+from megatron.core.distributed import DistributedDataParallel, DistributedDataParallelConfig
+from megatron.core.distributed import TorchFullyShardedDataParallel
 from megatron.core.datasets.blended_megatron_dataset_builder import BlendedMegatronDatasetBuilder
 from megatron.core.datasets.gpt_dataset import GPTDatasetConfig, MockGPTDataset
 from megatron.core.datasets.utils import compile_helpers
 from megatron.core.models.gpt.gpt_layer_specs import get_gpt_layer_local_spec
 from megatron.core.models.gpt.gpt_model import GPTModel
+from megatron.core.optimizer import ChainedOptimizer, OptimizerConfig, get_megatron_optimizer
 from megatron.core.pipeline_parallel.schedules import get_forward_backward_func
 from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.transformer_config import TransformerConfig
@@ -38,7 +42,7 @@ def initialize_distributed(tensor_model_parallel_size=1, pipeline_model_parallel
     )
 
 
-def model_provider(num_layers=1, tensor_model_parallel_size=1):
+def model_provider(num_layers=1, tensor_model_parallel_size=1, pipeline_parallel_size=1):
     """Build the model."""
 
     transformer_config = TransformerConfig(
@@ -49,15 +53,27 @@ def model_provider(num_layers=1, tensor_model_parallel_size=1):
         pipeline_dtype=torch.float32,
         sequence_parallel=tensor_model_parallel_size > 1,
         tensor_model_parallel_size=tensor_model_parallel_size,
+        pipeline_model_parallel_size=pipeline_parallel_size,
+        batch_p2p_comm=False,
+        no_sync_func=None,
+        deallocate_pipeline_outputs=False,
         deterministic_mode=True,
+        calculate_per_token_loss=False,
     )
 
+    pp_rank = parallel_state.get_pipeline_model_parallel_rank()
     gpt_model = GPTModel(
         config=transformer_config,
         transformer_layer_spec=get_gpt_layer_local_spec(),
         vocab_size=98304,
+        pre_process=parallel_state.is_pipeline_first_stage(),
+        post_process=parallel_state.is_pipeline_last_stage(),
         max_sequence_length=_SEQUENCE_LENGTH,
     )
+    # ddp_config = DistributedDataParallelConfig(use_distributed_optimizer=False)
+    # gpt_model = DistributedDataParallel(
+    #     transformer_config, ddp_config, gpt_model, disable_bucketing=False
+    # )
 
     return gpt_model
 
@@ -101,6 +117,7 @@ def forward_step_func(data_iterator, model):
         # If pipeline parallel, loss computation is done only in last stage.
 
         return loss, {'lm loss': loss}
+    rank = torch.distributed.get_rank()
 
     data = data_iterator.pop(0)
     tokens = data['tokens'].to(device)
@@ -115,17 +132,25 @@ def forward_step_func(data_iterator, model):
 
 parser = argparse.ArgumentParser("Simple GPT")
 parser.add_argument("--tp_size", default=1, type=int)
+parser.add_argument("--pp_size", default=1, type=int)
 parser.add_argument("--num_layers", default=1, type=int)
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    initialize_distributed(tensor_model_parallel_size=args.tp_size, pipeline_model_parallel_size=1)
+    initialize_distributed(tensor_model_parallel_size=args.tp_size, pipeline_model_parallel_size=args.pp_size)
     model_parallel_cuda_manual_seed(123)
 
-    gpt_model = model_provider(num_layers=args.num_layers, tensor_model_parallel_size=args.tp_size)
+    gpt_model = model_provider(num_layers=args.num_layers, tensor_model_parallel_size=args.tp_size, pipeline_parallel_size=args.pp_size)
     device = torch.device("cuda")
     gpt_model.to(device)
 
+    # optimizer_config = OptimizerConfig(
+    #     optimizer='adam',
+    #     bf16=False,
+    #     fp16=False,
+    #     use_distributed_optimizer=False,
+    # )
+    # optim = get_megatron_optimizer(optimizer_config, [gpt_model])
     optim = Adam(gpt_model.parameters())
 
     train_dataset = []
@@ -138,7 +163,7 @@ if __name__ == "__main__":
     optim.zero_grad()
 
     # dynamo = os.environ.get("TG_USING_DYNAMO", "0") == "1"
-    dynamo = True
+    dynamo = False
 
     def fn(model):
         losses_reduced = forward_backward_func(
@@ -147,10 +172,13 @@ if __name__ == "__main__":
             model=model,
             num_microbatches=1,
             seq_length=_SEQUENCE_LENGTH,
-            micro_batch_size=1,
+            micro_batch_size=8,
             decoder_seq_length=_SEQUENCE_LENGTH,
             forward_only=False,
         )
+        # model.start_grad_sync()
+        # model.finish_grad_sync()
+        # optim.step()
         return losses_reduced
 
     if dynamo:

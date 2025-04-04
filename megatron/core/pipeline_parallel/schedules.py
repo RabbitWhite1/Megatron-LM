@@ -350,9 +350,10 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
     if not isinstance(input_tensor, list):
         input_tensor = [input_tensor]
         unwrap_input_tensor_grad = True
-    for x in input_tensor:
-        if x is not None:
-            x.retain_grad()
+    # HACK DYNAMO: Zhanghan: If we only have one microbatch, we don't need to retain_grad.
+    # for x in input_tensor:
+    #     if x is not None:
+    #         x.retain_grad()
 
     if not isinstance(output_tensor, list):
         output_tensor = [output_tensor]
@@ -1638,11 +1639,11 @@ def forward_backward_pipelining_without_interleaving(
             len(model) == 1
         ), "non-interleaved pipeline-parallel schedule does not support model chunking"
         model = model[0]
-    if isinstance(data_iterator, list):
-        assert (
-            len(data_iterator) == 1
-        ), "non-interleaved pipeline-parallel schedule does not support model chunking"
-        data_iterator = data_iterator[0]
+    # if isinstance(data_iterator, list):
+    #     assert (
+    #         len(data_iterator) == 1
+    #     ), "non-interleaved pipeline-parallel schedule does not support model chunking"
+    #     data_iterator = data_iterator[0]
 
     config = get_model_config(model)
     if config.overlap_p2p_comm:
@@ -1677,7 +1678,8 @@ def forward_backward_pipelining_without_interleaving(
             no_sync_context.__exit__(None, None, None)
             no_sync_context = None
 
-    disable_grad_sync()
+    if no_sync_context is not None:
+        disable_grad_sync()
 
     # Compute number of warmup microbatches.
     num_warmup_microbatches = (
@@ -1760,7 +1762,7 @@ def forward_backward_pipelining_without_interleaving(
             encoder_decoder_xattn=encoder_decoder_xattn,
         )
         send_forward(output_tensor, send_tensor_shapes, config)
-        total_num_tokens += num_tokens.item()
+        total_num_tokens += num_tokens
 
         if not forward_only:
             input_tensors.append(input_tensor)
@@ -1801,7 +1803,7 @@ def forward_backward_pipelining_without_interleaving(
             current_microbatch=i + num_warmup_microbatches,
             encoder_decoder_xattn=encoder_decoder_xattn,
         )
-        total_num_tokens += num_tokens.item()
+        total_num_tokens += num_tokens
 
         if forward_only:
             send_forward(output_tensor, send_tensor_shapes, config)
@@ -1857,7 +1859,6 @@ def forward_backward_pipelining_without_interleaving(
 
             input_tensor = input_tensors.pop(0)
             output_tensor = output_tensors.pop(0)
-
             output_tensor_grad = recv_backward(send_tensor_shapes, config)
 
             input_tensor_grad = backward_step(

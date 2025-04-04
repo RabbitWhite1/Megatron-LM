@@ -338,23 +338,24 @@ class _ParamAndGradBucketGroup:
             communication_group = self.data_parallel_group
 
         # Coalesce communication kernels across buckets in the bucket group.
-        with stream_context, _coalescing_manager(communication_group, async_ops=async_op) as cm:
-            for bucket in self.buckets:
-                if self.ddp_config.use_distributed_optimizer:
-                    local_data_view = shard_buffer(
-                        bucket.grad_data, self.intra_distributed_optimizer_instance_size
-                    )[self.intra_distributed_optimizer_instance_rank]
-                    dist_reduce_scatter_func(
-                        local_data_view,
-                        bucket.grad_data,
-                        op=reduce_op,
-                        group=communication_group,
-                        async_op=async_op,
-                    )
-                else:
-                    torch.distributed.all_reduce(
-                        bucket.grad_data, op=reduce_op, group=communication_group, async_op=async_op
-                    )
+        # with stream_context, _coalescing_manager(communication_group, async_ops=async_op) as cm:
+        # cm = _coalescing_manager(communication_group, async_ops=async_op)
+        for bucket in self.buckets:
+            if self.ddp_config.use_distributed_optimizer:
+                local_data_view = shard_buffer(
+                    bucket.grad_data, self.intra_distributed_optimizer_instance_size
+                )[self.intra_distributed_optimizer_instance_rank]
+                dist_reduce_scatter_func(
+                    local_data_view,
+                    bucket.grad_data,
+                    op=reduce_op,
+                    group=communication_group,
+                    async_op=async_op,
+                )
+            else:
+                torch.distributed.all_reduce(
+                    bucket.grad_data, op=reduce_op, group=communication_group, async_op=async_op
+                )
 
         # With multiple DistOpt instances, we need to all-reduce across instances.
         if (

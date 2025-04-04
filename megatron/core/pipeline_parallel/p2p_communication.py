@@ -14,6 +14,8 @@ from megatron.core.parallel_state import (
     get_pipeline_model_parallel_world_size,
 )
 
+from torchgraph.graph.export.tools import *
+
 # Types
 Shape = Union[List[int], torch.Size]
 
@@ -181,55 +183,58 @@ def _p2p_ops(
     else:
         even_recv_odd_send_group = group
 
-    if get_pipeline_model_parallel_rank() % 2 == 0:
-        if tensor_send_next is not None:
-            send_next_req = torch.distributed.isend(
-                tensor=tensor_send_next, dst=next_pipeline_rank, group=even_send_odd_recv_group
-            )
-            reqs["send_next"] = send_next_req
+    me = get_pipeline_model_parallel_rank()
 
-        if tensor_recv_prev is not None:
-            recv_prev_req = torch.distributed.irecv(
-                tensor=tensor_recv_prev, src=prev_pipeline_rank, group=even_recv_odd_send_group
-            )
-            reqs["recv_prev"] = recv_prev_req
+    with torch.no_grad():
+        if get_pipeline_model_parallel_rank() % 2 == 0:
+            if tensor_send_next is not None:
+                send_next_req = fdist.isend(
+                    tensor=tensor_send_next, src=me, dst=next_pipeline_rank, group=even_send_odd_recv_group.group_name
+                )
+                reqs["send_next"] = send_next_req
 
-        if tensor_send_prev is not None:
-            send_prev_req = torch.distributed.isend(
-                tensor=tensor_send_prev, dst=prev_pipeline_rank, group=even_send_odd_recv_group
-            )
-            reqs["send_prev"] = send_prev_req
+            if tensor_recv_prev is not None:
+                recv_prev_req = fdist.irecv(
+                    tensor=tensor_recv_prev, src=prev_pipeline_rank, dst=me, group=even_recv_odd_send_group.group_name
+                )
+                reqs["recv_prev"] = (recv_prev_req, tensor_recv_prev)
 
-        if tensor_recv_next is not None:
-            recv_next_req = torch.distributed.irecv(
-                tensor=tensor_recv_next, src=next_pipeline_rank, group=even_recv_odd_send_group
-            )
-            reqs["recv_next"] = recv_next_req
+            if tensor_send_prev is not None:
+                send_prev_req = fdist.isend(
+                    tensor=tensor_send_prev, src=me, dst=prev_pipeline_rank, group=even_send_odd_recv_group.group_name
+                )
+                reqs["send_prev"] = send_prev_req
 
-    else:
-        if tensor_recv_prev is not None:
-            recv_prev_req = torch.distributed.irecv(
-                tensor=tensor_recv_prev, src=prev_pipeline_rank, group=even_send_odd_recv_group
-            )
-            reqs["recv_prev"] = recv_prev_req
+            if tensor_recv_next is not None:
+                recv_next_req = fdist.irecv(
+                    tensor=tensor_recv_next, src=next_pipeline_rank, dst=me, group=even_recv_odd_send_group.group_name
+                )
+                reqs["recv_next"] = (recv_next_req, tensor_recv_next)
 
-        if tensor_send_next is not None:
-            send_next_req = torch.distributed.isend(
-                tensor=tensor_send_next, dst=next_pipeline_rank, group=even_recv_odd_send_group
-            )
-            reqs["send_next"] = send_next_req
+        else:
+            if tensor_recv_prev is not None:
+                recv_prev_req = fdist.irecv(
+                    tensor=tensor_recv_prev, src=prev_pipeline_rank, dst=me, group=even_send_odd_recv_group.group_name
+                )
+                reqs["recv_prev"] = (recv_prev_req, tensor_recv_prev)
 
-        if tensor_recv_next is not None:
-            recv_next_req = torch.distributed.irecv(
-                tensor=tensor_recv_next, src=next_pipeline_rank, group=even_send_odd_recv_group
-            )
-            reqs["recv_next"] = recv_next_req
+            if tensor_send_next is not None:
+                send_next_req = fdist.isend(
+                    tensor=tensor_send_next, src=me, dst=next_pipeline_rank, group=even_recv_odd_send_group.group_name
+                )
+                reqs["send_next"] = send_next_req
 
-        if tensor_send_prev is not None:
-            send_prev_req = torch.distributed.isend(
-                tensor=tensor_send_prev, dst=prev_pipeline_rank, group=even_recv_odd_send_group
-            )
-            reqs["send_prev"] = send_prev_req
+            if tensor_recv_next is not None:
+                recv_next_req = fdist.irecv(
+                    tensor=tensor_recv_next, src=next_pipeline_rank, dst=me, group=even_send_odd_recv_group.group_name
+                )
+                reqs["recv_next"] = (recv_next_req, tensor_recv_next)
+
+            if tensor_send_prev is not None:
+                send_prev_req = fdist.isend(
+                    tensor=tensor_send_prev, src=me, dst=prev_pipeline_rank, group=even_recv_odd_send_group.group_name
+                )
+                reqs["send_prev"] = send_prev_req
     return reqs
 
 
@@ -288,20 +293,18 @@ def _communicate(
         )
 
     def create_tensor_recv_prev():
+        # HACK DYNAMO: Zhanghan: If we only have one microbatch, we don't need to retain_grad.
         return torch.empty(
             recv_prev_shape,
-            requires_grad=True,
-            device=torch.cuda.current_device(),
             dtype=config.pipeline_dtype,
-        )
+        ).cuda()#.requires_grad_(True)
 
     def create_tensor_recv_next():
+        # HACK DYNAMO: Zhanghan: If we only have one microbatch, we don't need to retain_grad.
         return torch.empty(
             recv_next_shape,
-            requires_grad=True,
-            device=torch.cuda.current_device(),
             dtype=config.pipeline_dtype,
-        )
+        ).cuda()#.requires_grad_(True)
 
     if recv_prev:
         if config.pipeline_dtype is None:
@@ -388,7 +391,12 @@ def _communicate(
 
     if wait_on_reqs and len(reqs) > 0:
         for req in reqs if isinstance(reqs, list) else reqs.values():
-            req.wait()
+            if type(req) is tuple:
+                req[1].copy_(req[0])
+            elif req is None:
+                pass
+            else:
+                req.wait()
         reqs = None
 
     if config.batch_p2p_comm and config.batch_p2p_sync:
