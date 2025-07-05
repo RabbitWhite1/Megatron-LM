@@ -6,12 +6,14 @@ from typing import Callable, Dict, List, Optional, Tuple
 import torch
 from torch.optim import SGD as CPUSGD
 from torch.optim import AdamW as CPUAdam
-
+from torchgraph.graph.dynamo.tools import USING_DYNAMO
 try:
     from transformer_engine.pytorch.optimizers import FusedAdam as Adam
     from transformer_engine.pytorch.optimizers import FusedSGD as SGD
 except ImportError:
     try:
+        if USING_DYNAMO:
+            raise ImportError()
         from apex.optimizers import FusedAdam as Adam
         from apex.optimizers import FusedSGD as SGD
     except ImportError:

@@ -146,9 +146,10 @@ if __name__ == "__main__":
 
     # optimizer_config = OptimizerConfig(
     #     optimizer='adam',
+    #     lr=0.0001,
     #     bf16=False,
     #     fp16=False,
-    #     use_distributed_optimizer=False,
+    #     use_distributed_optimizer=True,
     # )
     # optim = get_megatron_optimizer(optimizer_config, [gpt_model])
     optim = Adam(gpt_model.parameters())
@@ -163,7 +164,7 @@ if __name__ == "__main__":
     optim.zero_grad()
 
     # dynamo = os.environ.get("TG_USING_DYNAMO", "0") == "1"
-    dynamo = False
+    dynamo = True
 
     def fn(model):
         losses_reduced = forward_backward_func(

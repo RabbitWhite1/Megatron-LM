@@ -11,7 +11,7 @@ export TORCH_DISTRIBUTED_DEBUG=INFO # INFO/WARN
 ## Dynamo
 export TORCHDYNAMO_EXTENDED_DEBUG_CPP=1
 export TORCHDYNAMO_VERBOSE=1
-export DYNAMO_LOG_LEVEL=DEBUG
+export DYNAMO_LOG_LEVEL=WARN
 # export TORCH_LOGS="dynamic"  # This is for debugging dynamic shapes..
 ## Megatron
 export MEGATRON_LOGGING_LEVEL=WARN # Related logs: Running collective: ....
@@ -35,24 +35,24 @@ export TG_USING_DYNAMO=1
 # export TP_SIZE=1
 
 export TG_DUMP_DIRNAME=gpt/dp2-tp1
-# export nproc_per_node=2
-# export TP_SIZE=1
+export nproc_per_node=2
+export TP_SIZE=1
 
-# export TG_DUMP_DIRNAME=gpt/paral2
+# export TG_DUMP_DIRNAME=gpt/dp1-tp2
 # export nproc_per_node=2
 # export TP_SIZE=2
 
-# export TG_DUMP_DIRNAME=gpt/paral4
+# export TG_DUMP_DIRNAME=gpt/dp1-tp4
 # export nproc_per_node=4
 # export TP_SIZE=4
 
-# export TG_DUMP_DIRNAME=gpt/paral6
+# export TG_DUMP_DIRNAME=gpt/dp1-tp6
 # export nproc_per_node=6
 # export TP_SIZE=6
 
-# export TG_DUMP_DIRNAME=gpt/paral8
+# export TG_DUMP_DIRNAME=gpt/dp1-tp8
 # export nproc_per_node=8
 # export TP_SIZE=8
 
-export nproc_per_node=4
-PYTHONPATH=$PYTHON_PATH:./megatron TORCHRUN --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=1  --pp_size=4 --num_layers=4
+# export nproc_per_node=2
+PYTHONPATH=$PYTHON_PATH:./megatron torchrun --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=${TP_SIZE} --pp_size=2 --num_layers=2
