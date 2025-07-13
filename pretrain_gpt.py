@@ -36,6 +36,7 @@ from megatron.core.models.gpt.gpt_layer_specs import (
     get_gpt_layer_with_transformer_engine_spec,
 )
 
+import torchgraph as tg
 
 stimer = StragglerDetector()
 
@@ -223,20 +224,26 @@ def forward_step(data_iterator, model: GPTModel):
         data_iterator : Input data iterator
         model (GPTModel): The GPT Model
     """
-    args = get_args()
-    timers = get_timers()
-
-    # Get the batch.
-    timers('batch-generator', log_level=2).start()
-    global stimer
-    with stimer(bdata=True):
+    if tg.USING_DYNAMO:
         tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
             data_iterator)
-    timers('batch-generator').stop()
-
-    with stimer:
         output_tensor = model(tokens, position_ids, attention_mask,
                               labels=labels)
+    else:
+        args = get_args()
+        timers = get_timers()
+
+        # Get the batch.
+        timers('batch-generator', log_level=2).start()
+        global stimer
+        with stimer(bdata=True):
+            tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
+                data_iterator)
+        timers('batch-generator').stop()
+
+        with stimer:
+            output_tensor = model(tokens, position_ids, attention_mask,
+                                labels=labels)
 
     return output_tensor, partial(loss_func, loss_mask)
 

@@ -101,6 +101,9 @@ from . import one_logger_utils
 
 from . import ft_integration
 
+import itertools
+from torchgraph.graph.dynamo.tools import dynamo_and_dump
+
 stimer = StragglerDetector()
 
 
@@ -818,17 +821,43 @@ def train_step(forward_step_func, data_iterator,
             model_chunk.zero_grad_buffer()
         optimizer.zero_grad()
 
+        if type(data_iterator) is RerunDataIterator:
+            data_iterator = list(itertools.islice(data_iterator.iterable, args.micro_batch_size*get_num_microbatches()))
+            print(f"{args.micro_batch_size*get_num_microbatches()=}")
         # Forward pass.
         forward_backward_func = get_forward_backward_func()
-        losses_reduced = forward_backward_func(
-            forward_step_func=forward_step_func,
-            data_iterator=data_iterator,
-            model=model,
-            num_microbatches=get_num_microbatches(),
-            seq_length=args.seq_length,
-            micro_batch_size=args.micro_batch_size,
-            decoder_seq_length=args.decoder_seq_length,
-            forward_only=False)
+        def fn(model):
+            losses_reduced = forward_backward_func(
+                forward_step_func=forward_step_func,
+                data_iterator=data_iterator,
+                model=model,
+                num_microbatches=get_num_microbatches(),
+                seq_length=args.seq_length,
+                micro_batch_size=args.micro_batch_size,
+                decoder_seq_length=args.decoder_seq_length,
+                forward_only=False
+            )
+            return losses_reduced
+
+        dynamo = os.environ.get("TG_USING_DYNAMO", "0") == "1"
+        # dynamo = False
+        if dynamo:
+            dirname = os.environ["TG_DUMP_DIRNAME"]
+            os.makedirs(dirname, exist_ok=True)
+            _, _, _, res = dynamo_and_dump(
+                model,
+                fn,
+                dirname=dirname,
+                formats=['code'],
+                rank=torch.distributed.get_rank(),
+                compile_model_or_fn="fn",
+                return_res=True,
+            )
+            losses_reduced = res
+            exit(0)
+        else:
+            losses_reduced = fn(model)
+
     should_checkpoint, should_exit, exit_code = rerun_state_machine.should_checkpoint_and_exit()
     if should_exit:
         return {}, True, should_checkpoint, should_exit, exit_code, None, None
@@ -1538,6 +1567,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # Run training step.
         args.curr_iteration = iteration
         ft_integration.on_training_step_start()
+        print(f"{train_data_iterator=}")
         loss_dict, skipped_iter, should_checkpoint, should_exit, exit_code, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                        train_data_iterator,

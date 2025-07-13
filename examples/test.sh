@@ -55,4 +55,4 @@ export TP_SIZE=1
 # export TP_SIZE=8
 
 # export nproc_per_node=2
-PYTHONPATH=$PYTHON_PATH:./megatron torchrun --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=${TP_SIZE} --pp_size=2 --num_layers=2
+PYTHONPATH=$PYTHON_PATH:./megatron torchrun --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=${TP_SIZE} --pp_size=1 --num_layers=2

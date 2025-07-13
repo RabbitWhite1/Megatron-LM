@@ -17,6 +17,8 @@ import torch
 import megatron.core.parallel_state as mpu
 from megatron.core.dist_checkpointing.mapping import ShardedObject
 
+import torchgraph as tg
+
 """DISCLAIMER: THIS IS AN EXPERIMENTAL FEATURE.
 
 The rerun state machine implementation in this file is alpha-level code to help
@@ -489,6 +491,9 @@ class RerunStateMachine:
         # If reruns are disabled, still validate the result and throw a RuntimeError if it is
         # rejected. This is a backward-compatible behavior.
         if self.mode == RerunMode.DISABLED:
+            if tg.USING_DYNAMO:
+                # Otherwise, `result_rejected` introduced data-dependent branch.
+                return
             result_rejected: bool = rejection_func(result)
             if result_rejected:
                 self._log_validation_error_to_file(
