@@ -2,11 +2,11 @@
 
 # Runs the "345M" parameter model
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3,4
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-TP_SIZE=1
+TP_SIZE=2
 PP_SIZE=1
 GPUS_PER_NODE=$(($TP_SIZE*$PP_SIZE))
 # Change for multinode config
@@ -92,7 +92,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # DYNAMO
 export TORCHDYNAMO_EXTENDED_DEBUG_CPP=1
 export TORCHDYNAMO_VERBOSE=1
-export DYNAMO_LOG_LEVEL=DEBUG
+export DYNAMO_LOG_LEVEL=WARN
 
 export DYNAMO_SUPPRESS_ERRORS=0
 export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
@@ -117,4 +117,5 @@ torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     --no-gradient-accumulation-fusion \
     --no-bias-gelu-fusion \
     --no-bias-swiglu-fusion \
-    --no-bias-dropout-fusion 
+    --no-bias-dropout-fusion \
+    --no-async-tensor-model-parallel-allreduce

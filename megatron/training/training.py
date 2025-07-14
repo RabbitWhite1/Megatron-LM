@@ -823,7 +823,6 @@ def train_step(forward_step_func, data_iterator,
 
         if type(data_iterator) is RerunDataIterator:
             data_iterator = list(itertools.islice(data_iterator.iterable, args.micro_batch_size*get_num_microbatches()))
-            print(f"{args.micro_batch_size*get_num_microbatches()=}")
         # Forward pass.
         forward_backward_func = get_forward_backward_func()
         def fn(model):
@@ -854,6 +853,8 @@ def train_step(forward_step_func, data_iterator,
                 return_res=True,
             )
             losses_reduced = res
+            torch.distributed.barrier()
+            torch.distributed.destroy_process_group()
             exit(0)
         else:
             losses_reduced = fn(model)

@@ -432,7 +432,8 @@ def forward_backward_no_pipelining(
         assert len(model) == 1, "non-pipeline-parallel schedule does not support model chunking"
         model = model[0]
     if tg.USING_DYNAMO:
-        assert type(data_iterator) is list
+        # NOTE: it can be None, because when enabling TP, data of other ranks will be broadcasted later.
+        assert data_iterator is None or type(data_iterator) is list, f"{type(data_iterator)=}"
     else:
         if isinstance(data_iterator, list):
             assert (
