@@ -227,6 +227,8 @@ def forward_step(data_iterator, model: GPTModel):
     if tg.HACK_FOR_DYNAMO:
         tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
             data_iterator)
+        for name, param in model.named_parameters():
+            tg.inplace_log_tensor(param, name)
         output_tensor = model(tokens, position_ids, attention_mask,
                               labels=labels)
     else:

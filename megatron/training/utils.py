@@ -447,13 +447,18 @@ def get_batch_on_this_tp_rank(data_iterator):
                 data = next(data_iterator)
         else:
             data = None
-        batch = {
-            'tokens': data["tokens"].cuda(non_blocking = True),
-            'labels': data["labels"].cuda(non_blocking = True),
-            'loss_mask': data["loss_mask"].cuda(non_blocking = True),
-            'attention_mask': None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True),
-            'position_ids': data["position_ids"].cuda(non_blocking = True)
-        }
+        tokens = data["tokens"].cuda(non_blocking = True)
+        labels = data["labels"].cuda(non_blocking = True)
+        loss_mask = data["loss_mask"].cuda(non_blocking = True)
+        attention_mask = None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True)
+        position_ids = data["position_ids"].cuda(non_blocking = True)
+        
+        tokens = tg.log_tensor(tokens, "tokens")
+        labels = tg.log_tensor(labels, "labels")
+        loss_mask = tg.log_tensor(loss_mask, "loss_mask")
+        attention_mask = tg.log_tensor(attention_mask, "attention_mask")
+        position_ids = tg.log_tensor(position_ids, "position_ids")
+        batch = {'tokens': tokens, 'labels': labels, 'loss_mask': loss_mask, 'attention_mask': attention_mask, 'position_ids': position_ids}
 
         if args.pipeline_model_parallel_size == 1:
             batch['tokens'] = _broadcast(batch['tokens'])
@@ -498,6 +503,12 @@ def get_batch_on_this_tp_rank(data_iterator):
             loss_mask = data["loss_mask"].cuda(non_blocking = True)
             attention_mask = None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True)
             position_ids = data["position_ids"].cuda(non_blocking = True)
+
+            tokens = tg.log_tensor(tokens, "tokens")
+            labels = tg.log_tensor(labels, "labels")
+            loss_mask = tg.log_tensor(loss_mask, "loss_mask")
+            attention_mask = tg.log_tensor(attention_mask, "attention_mask")
+            position_ids = tg.log_tensor(position_ids, "position_ids")
 
         if args.pipeline_model_parallel_size == 1:
             tokens = _broadcast(tokens)
