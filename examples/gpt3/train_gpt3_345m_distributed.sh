@@ -6,15 +6,21 @@ export CUDA_VISIBLE_DEVICES=6,7
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-TP_SIZE=2
-PP_SIZE=1
-GPUS_PER_NODE=$(($TP_SIZE*$PP_SIZE))
+GPUS_PER_NODE=`python -c "import os; print(os.environ['CUDA_VISIBLE_DEVICES'].count(',' ) + 1)"`
+
 # Change for multinode config
 MASTER_ADDR=localhost
 MASTER_PORT=6000
 NUM_NODES=1
 NODE_RANK=0
+GLOBAL_BATCH_SIZE=32
+TP_SIZE=2
+PP_SIZE=1
+DP_SIZE=$(($GPUS_PER_NODE / (TP_SIZE * PP_SIZE) * $NUM_NODES))
+# GPUS_PER_NODE=$(($DP_SIZE*$TP_SIZE*$PP_SIZE))
 WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
+
+echo "GPUS_PER_NODE: $GPUS_PER_NODE, NUM_NODES: $NUM_NODES, TP_SIZE: $TP_SIZE, PP_SIZE: $PP_SIZE, DP_SIZE: $DP_SIZE, WORLD_SIZE: $WORLD_SIZE"
 
 # CHECKPOINT_PATH=$1 #<Specify path>
 # TENSORBOARD_LOGS_PATH=$2 #<Specify path>
@@ -31,8 +37,8 @@ DISTRIBUTED_ARGS=(
 
 GPT_MODEL_ARGS=(
     --num-layers 1 
-    --hidden-size 384 
-    --num-attention-heads 8
+    --hidden-size 768 
+    --num-attention-heads 32
     --seq-length 1024 
     --max-position-embeddings 2048 
     --attention-backend flash # Can use (flash/fused/unfused/local)
@@ -40,8 +46,8 @@ GPT_MODEL_ARGS=(
 )
 
 TRAINING_ARGS=(
-    --micro-batch-size 8 
-    --global-batch-size 8 
+    --micro-batch-size $(($GLOBAL_BATCH_SIZE / $DP_SIZE))
+    --global-batch-size $GLOBAL_BATCH_SIZE
     # --rampup-batch-size 16 16 5859375 
     --train-iters 1
     --weight-decay 0.1 
@@ -111,7 +117,7 @@ export TG_USE_COMPILER_DISABLE=0
 export TG_USING_DYNAMO=1
 export TG_HACK_FOR_DYNAMO=1
 
-export TG_DUMP_DIRNAME=gpt/dp1-tp${TP_SIZE}
+export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}
 
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
 export CUDA_LAUNCH_BLOCKING=1

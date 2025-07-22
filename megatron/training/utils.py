@@ -51,6 +51,7 @@ try:
 except ImportError:
     ALL_MODULE_WRAPPER_CLASSNAMES = (DDP, Float16Module)
 
+import megatron
 import torchgraph as tg
 from torchgraph.graph.dynamo.tools import *
 from torchgraph.graph.dynamo.tools import fdist
@@ -434,8 +435,14 @@ def get_batch_on_this_tp_rank(data_iterator):
 
     def _broadcast(item):
        if item is not None:
-            res = fdist.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
-            return res
+            # XXX: functional broadcast accept `src` as a local rank inside the group, thus we have to hack it.
+            if tg.HACK_FOR_DYNAMO:
+                global_src = mpu.get_tensor_model_parallel_src_rank()
+                group_src = tg.get_group_rank(global_src, megatron.core.parallel_state._MODEL_PARALLEL_GLOBAL_RANKS)
+                res = fdist.broadcast(item, group_src, group=mpu.get_tensor_model_parallel_group())
+                return res
+            else:
+                dist.broadcast(item, src=mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
 
     if mpu.get_tensor_model_parallel_rank() == 0:
 
