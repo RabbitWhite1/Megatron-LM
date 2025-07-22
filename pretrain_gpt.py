@@ -297,12 +297,24 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
     print_rank_0("> building train, validation, and test datasets for GPT ...")
 
-    train_ds, valid_ds, test_ds = BlendedMegatronDatasetBuilder(
-        dataset_type,
-        train_val_test_num_samples,
-        is_dataset_built_on_rank,
-        config
-    ).build()
+    if tg.USING_DYNAMO:
+        # XXX: This is a hack that force the `get_batch_on_this_tp_rank` to be traced to 
+        # similar fx graphs, so that the fw/bw partitioning won't cause a huge difference.
+        # Without this, the rank without loaded dataset will have duplicated broadcast in bw,
+        # which results in a blocking, because rank 0 won't have the broadcast.
+        train_ds, valid_ds, test_ds = BlendedMegatronDatasetBuilder(
+            dataset_type,
+            train_val_test_num_samples,
+            lambda: True,
+            config
+        ).build()
+    else:
+        train_ds, valid_ds, test_ds = BlendedMegatronDatasetBuilder(
+            dataset_type,
+            train_val_test_num_samples,
+            is_dataset_built_on_rank,
+            config
+        ).build()
 
     print_rank_0("> finished creating GPT datasets ...")
 

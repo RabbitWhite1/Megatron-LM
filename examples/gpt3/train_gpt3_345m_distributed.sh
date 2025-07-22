@@ -2,7 +2,7 @@
 
 # Runs the "345M" parameter model
 
-export CUDA_VISIBLE_DEVICES=3,4
+export CUDA_VISIBLE_DEVICES=6,7
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
@@ -31,8 +31,8 @@ DISTRIBUTED_ARGS=(
 
 GPT_MODEL_ARGS=(
     --num-layers 1 
-    --hidden-size 512 
-    --num-attention-heads 8 
+    --hidden-size 384 
+    --num-attention-heads 8
     --seq-length 1024 
     --max-position-embeddings 2048 
     --attention-backend flash # Can use (flash/fused/unfused/local)
@@ -40,8 +40,8 @@ GPT_MODEL_ARGS=(
 )
 
 TRAINING_ARGS=(
-    --micro-batch-size 32 
-    --global-batch-size 32 
+    --micro-batch-size 8 
+    --global-batch-size 8 
     # --rampup-batch-size 16 16 5859375 
     --train-iters 1
     --weight-decay 0.1 
@@ -89,6 +89,11 @@ export MEGATRON_SHOW_BARRIER_ENTER_EXIT_LOG=0
 export NCCL_ALGO=Ring
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
+# PyTorch Debug
+export NCCL_DEBUG=INFO  # INFO/WARN
+# export NCCL_DEBUG_SUBSYS=COLL
+# export TORCH_DISTRIBUTED_DEBUG=INFO # INFO/WARN
+
 # DYNAMO
 export TORCHDYNAMO_EXTENDED_DEBUG_CPP=1
 export TORCHDYNAMO_VERBOSE=1
@@ -104,8 +109,12 @@ export TG_USE_RNG=0
 export TG_USE_CUSTOM_OP=1
 export TG_USE_COMPILER_DISABLE=0
 export TG_USING_DYNAMO=1
+export TG_HACK_FOR_DYNAMO=1
 
 export TG_DUMP_DIRNAME=gpt/dp1-tp${TP_SIZE}
+
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
+export CUDA_LAUNCH_BLOCKING=1
 
 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     ${GPT_MODEL_ARGS[@]} \
@@ -118,4 +127,13 @@ torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     --no-bias-gelu-fusion \
     --no-bias-swiglu-fusion \
     --no-bias-dropout-fusion \
-    --no-async-tensor-model-parallel-allreduce
+    --no-async-tensor-model-parallel-allreduce \
+    --disable-tp-comm-overlap-ag \
+    --disable-tp-comm-overlap-rs \
+    --disable-tp-comm-split-ag \
+    --disable-tp-comm-split-rs \
+    --disable-tp-comm-bulk-dgrad \
+    --disable-tp-comm-bulk-wgrad \
+    --no-check-for-nan-in-loss-and-grad \
+    --no-align-grad-reduce \
+    --distributed-timeout-minutes 1

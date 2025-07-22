@@ -53,6 +53,7 @@ except ImportError:
 
 import torchgraph as tg
 from torchgraph.graph.dynamo.tools import *
+from torchgraph.graph.dynamo.tools import fdist
 
 
 def unwrap_model(model, module_instances=ALL_MODULE_WRAPPER_CLASSNAMES):
@@ -427,16 +428,15 @@ def get_blend_and_blend_per_split(args):
 
     return blend, blend_per_split
 
-import traceback
 def get_batch_on_this_tp_rank(data_iterator):
 
     args = get_args()
 
     def _broadcast(item):
        if item is not None:
-            # torch.distributed.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
             res = fdist.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
             return res
+    non_blocking = False
     if mpu.get_tensor_model_parallel_rank() == 0:
 
         if data_iterator is not None:
@@ -447,7 +447,6 @@ def get_batch_on_this_tp_rank(data_iterator):
                 data = next(data_iterator)
         else:
             data = None
-            
         batch = {
             'tokens': data["tokens"].cuda(non_blocking = True),
             'labels': data["labels"].cuda(non_blocking = True),
@@ -474,17 +473,30 @@ def get_batch_on_this_tp_rank(data_iterator):
             batch['attention_mask'] = _broadcast(batch['attention_mask'])
 
     else:
+        # tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        # labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+        # loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
+        # if args.create_attention_mask_in_dataloader:
+        #     attention_mask=torch.empty(
+        #             (args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device()
+        #         )
+        # else:
+        #     attention_mask=None
+        # position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
 
-        tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
-        if args.create_attention_mask_in_dataloader:
-            attention_mask=torch.empty(
-                    (args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device()
-                )
+        if data_iterator is not None:
+            if tg.USING_DYNAMO:
+                data = data_iterator[0]
+                data_iterator.pop(0)
+            else:
+                data = next(data_iterator)
         else:
-            attention_mask=None
-        position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+            data = None
+        tokens = data["tokens"].cuda(non_blocking = True)
+        labels = data["labels"].cuda(non_blocking = True)
+        loss_mask = data["loss_mask"].cuda(non_blocking = True)
+        attention_mask = None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True)
+        position_ids = data["position_ids"].cuda(non_blocking = True)
 
         if args.pipeline_model_parallel_size == 1:
             tokens = _broadcast(tokens)
