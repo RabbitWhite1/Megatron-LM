@@ -251,7 +251,7 @@ def forward_step(
         Tensor or list[Tensor]: The output object(s) from the forward step.
         Tensor: The number of tokens.
     """
-    if not tg.USING_DYNAMO and config.timers is not None:
+    if not tg.HACK_FOR_DYNAMO and config.timers is not None:
         config.timers('forward-compute', log_level=2).start()
 
     if is_first_microbatch and hasattr(model, 'set_is_first_microbatch'):
@@ -267,7 +267,7 @@ def forward_step(
     set_input_tensor = get_attr_wrapped_model(model, "set_input_tensor")
     set_input_tensor(input_tensor)
 
-    if not tg.USING_DYNAMO and config.enable_autocast:
+    if not tg.HACK_FOR_DYNAMO and config.enable_autocast:
         context_manager = torch.autocast("cuda", dtype=config.autocast_dtype)
     else:
         context_manager = contextlib.nullcontext()
@@ -298,7 +298,7 @@ def forward_step(
             data = loss_func(output_tensor, non_loss_data=True)
             forward_data_store.append(data)
 
-    if not tg.USING_DYNAMO and config.timers is not None:
+    if not tg.HACK_FOR_DYNAMO and config.timers is not None:
         config.timers('forward-compute').stop()
 
     # Set the loss scale for the auxiliary loss of the MoE layer.
@@ -431,7 +431,7 @@ def forward_backward_no_pipelining(
     if isinstance(model, list):
         assert len(model) == 1, "non-pipeline-parallel schedule does not support model chunking"
         model = model[0]
-    if tg.USING_DYNAMO:
+    if tg.HACK_FOR_DYNAMO:
         # NOTE: it can be None, because when enabling TP, data of other ranks will be broadcasted later.
         assert data_iterator is None or type(data_iterator) is list, f"{type(data_iterator)=}"
     else:
@@ -442,11 +442,11 @@ def forward_backward_no_pipelining(
             data_iterator = data_iterator[0]
 
     config = get_model_config(model)
-    if not tg.USING_DYNAMO and config.timers is not None:
+    if not tg.HACK_FOR_DYNAMO and config.timers is not None:
         config.timers('forward-backward', log_level=1).start(barrier=config.barrier_with_L1_time)
 
     no_sync_func = config.no_sync_func
-    if tg.USING_DYNAMO:
+    if tg.HACK_FOR_DYNAMO:
         assert no_sync_func is None, "no_sync_func is not supported in Dynamo"
     if no_sync_func is None:
         no_sync_func = contextlib.nullcontext
@@ -490,7 +490,7 @@ def forward_backward_no_pipelining(
         ),
         current_microbatch=num_microbatches - 1,
     )
-    if not tg.USING_DYNAMO:
+    if not tg.HACK_FOR_DYNAMO:  # FIXME: not sure.
         total_num_tokens += num_tokens.item()
 
     if not forward_only:

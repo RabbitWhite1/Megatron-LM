@@ -138,7 +138,7 @@ class LanguageModelEmbedding(MegatronModule):
             # Has a small runtime cost (~0.5%).
             if self.config.clone_scatter_output_in_embedding and self.scatter_to_sequence_parallel:
                 embeddings = embeddings.clone()
-            if tg.USING_DYNAMO:
+            if tg.HACK_FOR_DYNAMO:  # XXX: remove rng.
                 embeddings = self.embedding_dropout(embeddings)
             else:
                 with tensor_parallel.get_cuda_rng_tracker().fork():

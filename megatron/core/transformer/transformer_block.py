@@ -500,7 +500,7 @@ class TransformerBlock(MegatronModule):
         #   is called here to be future-proof and corner-case-proof.
         hidden_states = make_viewless_tensor(inp=hidden_states, requires_grad=True, keep_graph=True)
 
-        if not tg.USING_DYNAMO and self.config.sequence_parallel:
+        if not tg.HACK_FOR_DYNAMO and self.config.sequence_parallel:
             rng_context = tensor_parallel.get_cuda_rng_tracker().fork()
         else:
             rng_context = nullcontext()
@@ -546,7 +546,7 @@ class TransformerBlock(MegatronModule):
             else:
                 for l_no, layer in enumerate(self.layers):
                     with self.offload_context:
-                        if not tg.USING_DYNAMO:
+                        if not tg.HACK_FOR_DYNAMO:
                             layer.use_cudagraph = True
                         if (len(self.cuda_graphs) == 0) or (not self.training):
                             hidden_states, context = layer(

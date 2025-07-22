@@ -433,7 +433,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             dim_size = list(input.size())
             dim_size[0] = dim_size[0] * world_size
 
-            if tg.USING_DYNAMO:
+            if tg.HACK_FOR_DYNAMO:
                 total_input = fdist.all_gather_tensor(input, gather_dim=0, group=get_tensor_model_parallel_group())
             else:
                 all_gather_buffer = get_global_memory_buffer().get_tensor(dim_size, input.dtype, "mpu")
@@ -468,7 +468,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
                 dim_size = list(input.size())
                 dim_size[0] = dim_size[0] * world_size
 
-                if tg.USING_DYNAMO:
+                if tg.HACK_FOR_DYNAMO:
                     handle = fdist.all_gather_tensor(input, gather_dim=0, group=get_tensor_model_parallel_group())
                     total_input = fdist.wait_tensor(handle)
                 else:
@@ -499,7 +499,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.allreduce_dgrad:
             # Asynchronous all-reduce
-            if tg.USING_DYNAMO:
+            if tg.HACK_FOR_DYNAMO:
                 handle = fdist.all_reduce(grad_input, reduceOp="sum", group=get_tensor_model_parallel_group())
             else:
                 handle = torch.distributed.all_reduce(
@@ -510,16 +510,14 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
 
         if ctx.sequence_parallel:
             assert not ctx.allreduce_dgrad
-            if tg.USING_DYNAMO:
-                device = input.device
-            else:
-                device = torch.cuda.current_device()
+            # XXX: If using torch 2.4 or lower, we will need explicit device.
+            device = torch.cuda.current_device()
             dim_size = list(input.size())
             sub_grad_input = torch.empty(
                 dim_size, dtype=input.dtype, device=device, requires_grad=False
             )
             # reduce_scatter
-            if tg.USING_DYNAMO:
+            if tg.HACK_FOR_DYNAMO:
                 handle = fdist.reduce_scatter_tensor(grad_input, reduceOp="sum", scatter_dim=0, group=get_tensor_model_parallel_group())
             else:
                 handle = dist_reduce_scatter_func(
@@ -676,7 +674,7 @@ def linear_with_grad_accumulation_and_async_allreduce(
         wgrad_deferral_limit,
     ]
 
-    if not tg.USING_DYNAMO and not linear_with_grad_accumulation_and_async_allreduce.warned:
+    if not tg.HACK_FOR_DYNAMO and not linear_with_grad_accumulation_and_async_allreduce.warned:
         if os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS') != "1":
             if sequence_parallel:
                 warnings.warn(

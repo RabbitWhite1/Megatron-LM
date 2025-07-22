@@ -135,10 +135,8 @@ def _gather_along_first_dim(input_, group=None, output_split_sizes=None, use_glo
         return input_
 
     dim_size = list(input_.size())
-    if tg.USING_DYNAMO:
-        device = input_.device
-    else:
-        device = torch.cuda.current_device()
+    # XXX: If using torch 2.4 or lower, we will need explicit device.
+    device = torch.cuda.current_device()
     if output_split_sizes is None:
         dim_size[0] = dim_size[0] * world_size
 
@@ -185,7 +183,7 @@ def _reduce_scatter_along_first_dim(
 
         dim_size[0] = dim_size[0] // world_size
 
-        if tg.USING_DYNAMO:
+        if tg.HACK_FOR_DYNAMO:
             output = torch.empty(dim_size, dtype=input_.dtype, device=input_.device)
         elif use_global_buffer:
             output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
@@ -196,7 +194,7 @@ def _reduce_scatter_along_first_dim(
         rank = torch.distributed.get_rank(group)
         input_tensor_list = list(torch.split(input_, input_split_sizes, dim=0))
 
-        if tg.USING_DYNAMO:
+        if tg.HACK_FOR_DYNAMO:
             output = torch.empty_like(input_tensor_list[rank])
         elif use_global_buffer:
             output = get_global_memory_buffer().get_tensor(

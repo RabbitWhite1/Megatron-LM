@@ -491,8 +491,8 @@ class RerunStateMachine:
         # If reruns are disabled, still validate the result and throw a RuntimeError if it is
         # rejected. This is a backward-compatible behavior.
         if self.mode == RerunMode.DISABLED:
-            if tg.USING_DYNAMO:
-                # Otherwise, `result_rejected` introduced data-dependent branch.
+            if tg.HACK_FOR_DYNAMO:
+                # XXX: Otherwise, `result_rejected` introduced data-dependent branch.
                 return
             result_rejected: bool = rejection_func(result)
             if result_rejected:

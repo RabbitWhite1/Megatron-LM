@@ -151,7 +151,7 @@ class FusedLayerNorm(torch.nn.Module):
             )
 
         else:
-            if not tg.USING_DYNAMO and (
+            if not tg.HACK_FOR_DYNAMO and (
                 'memory_efficient'
                 in inspect.getfullargspec(FusedLayerNormAffineFunction.forward).args
             ):
@@ -163,7 +163,7 @@ class FusedLayerNorm(torch.nn.Module):
                     self.eps,
                     self.config.memory_efficient_layer_norm,
                 )
-            elif tg.USING_DYNAMO:
+            elif tg.HACK_FOR_DYNAMO:
                 output, _, _ = fused_layer_norm_affine_fwd(
                     input, weight, self.bias, self.hidden_size, self.eps
                 )

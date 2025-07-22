@@ -145,7 +145,7 @@ class DotProductAttention(MegatronModule):
         key = key.view(output_size[3], output_size[0] * output_size[1], -1)
 
         # preallocting input tensor: [b * np, sq, sk]
-        if tg.USING_DYNAMO:
+        if tg.HACK_FOR_DYNAMO:
             matmul_input_buffer = torch.empty((output_size[0] * output_size[1], output_size[2], output_size[3]), dtype=query.dtype, device=query.device)
         else:
             matmul_input_buffer = parallel_state.get_global_memory_buffer().get_tensor(
@@ -174,7 +174,7 @@ class DotProductAttention(MegatronModule):
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
 
-        if not tg.USING_DYNAMO and not self.config.sequence_parallel:
+        if not tg.HACK_FOR_DYNAMO and not self.config.sequence_parallel:
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 attention_probs = self.attention_dropout(attention_probs)
         else:

@@ -29,6 +29,7 @@ export TG_USE_CUSTOM_OP=1
 export TG_USE_COMPILER_DISABLE=0
 
 export TG_USING_DYNAMO=1
+export TG_HACK_FOR_DYNAMO=1
 
 # export TG_DUMP_DIRNAME=gpt/dp1-tp1
 # export nproc_per_node=1
@@ -36,7 +37,7 @@ export TG_USING_DYNAMO=1
 
 export TG_DUMP_DIRNAME=gpt/dp2-tp1
 export nproc_per_node=2
-export TP_SIZE=1
+export TP_SIZE=2
 
 # export TG_DUMP_DIRNAME=gpt/dp1-tp2
 # export nproc_per_node=2
@@ -55,4 +56,4 @@ export TP_SIZE=1
 # export TP_SIZE=8
 
 # export nproc_per_node=2
-PYTHONPATH=$PYTHON_PATH:./megatron torchrun --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=${TP_SIZE} --pp_size=1 --num_layers=2
+PYTHONPATH=$PYTHON_PATH:./megatron torchrun --nproc-per-node $nproc_per_node examples/simple_gpt.py --tp_size=${TP_SIZE} --pp_size=1 --num_layers=1

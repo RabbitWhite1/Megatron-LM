@@ -24,6 +24,8 @@ from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.transformer_config import TransformerConfig
 from megatron.training.tokenizer.tokenizer import _NullTokenizer
 
+import torchgraph as tg
+
 _SEQUENCE_LENGTH = 1536
 
 
@@ -163,7 +165,7 @@ if __name__ == "__main__":
 
     optim.zero_grad()
 
-    # dynamo = os.environ.get("TG_USING_DYNAMO", "0") == "1"
+    dynamo = tg.USING_DYNAMO
     dynamo = True
 
     def fn(model):

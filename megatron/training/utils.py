@@ -436,11 +436,11 @@ def get_batch_on_this_tp_rank(data_iterator):
        if item is not None:
             res = fdist.broadcast(item, mpu.get_tensor_model_parallel_src_rank(), group=mpu.get_tensor_model_parallel_group())
             return res
-    non_blocking = False
+
     if mpu.get_tensor_model_parallel_rank() == 0:
 
         if data_iterator is not None:
-            if tg.USING_DYNAMO:
+            if tg.HACK_FOR_DYNAMO:
                 data = data_iterator[0]
                 data_iterator.pop(0)
             else:
@@ -484,19 +484,20 @@ def get_batch_on_this_tp_rank(data_iterator):
         #     attention_mask=None
         # position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
 
-        if data_iterator is not None:
-            if tg.USING_DYNAMO:
-                data = data_iterator[0]
-                data_iterator.pop(0)
+        if tg.HACK_FOR_DYNAMO:
+            if data_iterator is not None:
+                if tg.HACK_FOR_DYNAMO:
+                    data = data_iterator[0]
+                    data_iterator.pop(0)
+                else:
+                    data = next(data_iterator)
             else:
-                data = next(data_iterator)
-        else:
-            data = None
-        tokens = data["tokens"].cuda(non_blocking = True)
-        labels = data["labels"].cuda(non_blocking = True)
-        loss_mask = data["loss_mask"].cuda(non_blocking = True)
-        attention_mask = None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True)
-        position_ids = data["position_ids"].cuda(non_blocking = True)
+                data = None
+            tokens = data["tokens"].cuda(non_blocking = True)
+            labels = data["labels"].cuda(non_blocking = True)
+            loss_mask = data["loss_mask"].cuda(non_blocking = True)
+            attention_mask = None if "attention_mask" not in data else data["attention_mask"].cuda(non_blocking = True)
+            position_ids = data["position_ids"].cuda(non_blocking = True)
 
         if args.pipeline_model_parallel_size == 1:
             tokens = _broadcast(tokens)

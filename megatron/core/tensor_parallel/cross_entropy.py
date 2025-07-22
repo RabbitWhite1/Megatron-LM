@@ -44,14 +44,8 @@ class VocabParallelCrossEntropy:
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Calculates predicted logits."""
 
-        # In-place subtraction reduces memory pressure.
-        if tg.USING_DYNAMO:
-            vocab_parallel_logits = vocab_parallel_logits.clone()
-            vocab_parallel_logits -= logits_max.unsqueeze(dim=-1)
-            # tmp = vocab_parallel_logits - logits_max.unsqueeze(dim=-1)    
-            # vocab_parallel_logits.copy_(tmp)
-        else:    
-            vocab_parallel_logits -= logits_max.unsqueeze(dim=-1)
+        # XXX: If using torch 2.4 or lower, we will need non-inplace op.
+        vocab_parallel_logits -= logits_max.unsqueeze(dim=-1)
 
         # Create a mask of valid vocab ids (1 means it needs to be masked).
         target_mask = (target < vocab_start_index) | (target >= vocab_end_index)
@@ -71,11 +65,8 @@ class VocabParallelCrossEntropy:
         predicted_logits[target_mask] = 0.0
 
         exp_logits = vocab_parallel_logits
-        if tg.USING_DYNAMO:
-            res = torch.exp(vocab_parallel_logits)
-            exp_logits.copy_(res)
-        else:
-            torch.exp(vocab_parallel_logits, out=exp_logits)
+        # XXX: If using torch 2.4 or lower, we will need non-inplace op.
+        torch.exp(vocab_parallel_logits, out=exp_logits)
         sum_exp_logits = exp_logits.sum(dim=-1)
 
         return target_mask, masked_target_1d, predicted_logits, sum_exp_logits, exp_logits

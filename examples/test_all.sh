@@ -29,6 +29,7 @@ export TG_USE_CUSTOM_OP=1
 export TG_USE_COMPILER_DISABLE=0
 
 export TG_USING_DYNAMO=1
+export TG_HACK_FOR_DYNAMO=1
 
 for num_layers in 1 2 4 8 12 16
 do

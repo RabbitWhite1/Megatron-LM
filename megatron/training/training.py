@@ -102,6 +102,7 @@ from . import one_logger_utils
 from . import ft_integration
 
 import itertools
+import torchgraph as tg
 from torchgraph.graph.dynamo.tools import dynamo_and_dump
 
 stimer = StragglerDetector()
@@ -838,7 +839,7 @@ def train_step(forward_step_func, data_iterator,
             )
             return losses_reduced
 
-        dynamo = os.environ.get("TG_USING_DYNAMO", "0") == "1"
+        dynamo = tg.USING_DYNAMO
         # dynamo = False
         if dynamo:
             dirname = os.environ["TG_DUMP_DIRNAME"]

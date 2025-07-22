@@ -224,7 +224,7 @@ def forward_step(data_iterator, model: GPTModel):
         data_iterator : Input data iterator
         model (GPTModel): The GPT Model
     """
-    if tg.USING_DYNAMO:
+    if tg.HACK_FOR_DYNAMO:
         tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
             data_iterator)
         output_tensor = model(tokens, position_ids, attention_mask,
@@ -297,8 +297,8 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
     print_rank_0("> building train, validation, and test datasets for GPT ...")
 
-    if tg.USING_DYNAMO:
-        # XXX: This is a hack that force the `get_batch_on_this_tp_rank` to be traced to 
+    if tg.HACK_FOR_DYNAMO:
+        # XXX: This is a hack that force the `get_batch_on_this_tp_rank` to be traced to
         # similar fx graphs, so that the fw/bw partitioning won't cause a huge difference.
         # Without this, the rank without loaded dataset will have duplicated broadcast in bw,
         # which results in a blocking, because rank 0 won't have the broadcast.
