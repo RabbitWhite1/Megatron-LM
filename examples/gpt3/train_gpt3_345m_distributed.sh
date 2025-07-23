@@ -14,19 +14,18 @@ MASTER_PORT=6000
 NUM_NODES=1
 NODE_RANK=0
 GLOBAL_BATCH_SIZE=32
-TP_SIZE=2
+CP_SIZE=2
+TP_SIZE=1
 PP_SIZE=1
-DP_SIZE=$(($GPUS_PER_NODE / (TP_SIZE * PP_SIZE) * $NUM_NODES))
+DP_SIZE=$(($GPUS_PER_NODE / ($CP_SIZE * $TP_SIZE * $PP_SIZE) * $NUM_NODES))
 # GPUS_PER_NODE=$(($DP_SIZE*$TP_SIZE*$PP_SIZE))
 WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
 
-echo "GPUS_PER_NODE: $GPUS_PER_NODE, NUM_NODES: $NUM_NODES, TP_SIZE: $TP_SIZE, PP_SIZE: $PP_SIZE, DP_SIZE: $DP_SIZE, WORLD_SIZE: $WORLD_SIZE"
+echo "GPUS_PER_NODE: $GPUS_PER_NODE, NUM_NODES: $NUM_NODES, TP_SIZE: $TP_SIZE, CP_SIZE: $CP_SIZE, PP_SIZE: $PP_SIZE, DP_SIZE: $DP_SIZE, WORLD_SIZE: $WORLD_SIZE"
 
-# CHECKPOINT_PATH=$1 #<Specify path>
-# TENSORBOARD_LOGS_PATH=$2 #<Specify path>
-VOCAB_FILE=$1 #<Specify path to file>/gpt2-vocab.json
-MERGE_FILE=$2 #<Specify path to file>/gpt2-merges.txt
-DATA_PATH=$3 #<Specify path and file prefix>_text_document
+VOCAB_FILE=../datasets/gpt2/vocab.json
+MERGE_FILE=../datasets/gpt2/merges.txt
+DATA_PATH=../datasets/gpt2/my-gpt2_text_document
 
 DISTRIBUTED_ARGS=(
     --nproc_per_node $GPUS_PER_NODE 
@@ -37,12 +36,15 @@ DISTRIBUTED_ARGS=(
 
 GPT_MODEL_ARGS=(
     --num-layers 1 
-    --hidden-size 768 
+    --hidden-size 1536 
     --num-attention-heads 32
     --seq-length 1024 
     --max-position-embeddings 2048 
+    --fp16
+    --use-flash-attn
     --attention-backend flash # Can use (flash/fused/unfused/local)
-    --transformer-impl local
+    --transformer-impl transformer_engine
+    # --deterministic-mode
 )
 
 TRAINING_ARGS=(
@@ -65,6 +67,7 @@ TRAINING_ARGS=(
 
 MODEL_PARALLEL_ARGS=(
 	--tensor-model-parallel-size $TP_SIZE
+    --context-parallel-size $CP_SIZE
 	--pipeline-model-parallel-size $PP_SIZE
 )
 
@@ -90,6 +93,7 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export CUDA_MAX_CONNECTIONS=1
 # export MEGATRON_LOGGING_LEVEL=WARN # Related logs: Running collective: ....
 export MEGATRON_SHOW_BARRIER_ENTER_EXIT_LOG=0
+export NVTE_ALLOW_NONDETERMINISTIC_ALGO=1  # Required for using transformer engine
 
 # Deterministic settings
 export NCCL_ALGO=Ring
@@ -117,18 +121,21 @@ export TG_USE_COMPILER_DISABLE=0
 export TG_USING_DYNAMO=1
 export TG_HACK_FOR_DYNAMO=1
 
-export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}
+export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}-cp${CP_SIZE}
 
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
 export CUDA_LAUNCH_BLOCKING=1
 
-torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
+export NVTE_FLASH_ATTN=1
+export NVTE_FUSED_ATTN=0
+export NVTE_UNFUSED_ATTN=0
+
+NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=2 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     ${GPT_MODEL_ARGS[@]} \
     ${TRAINING_ARGS[@]} \
     ${MODEL_PARALLEL_ARGS[@]} \
     ${DATA_ARGS[@]} \
     ${EVAL_AND_LOGGING_ARGS[@]} \
-    --deterministic-mode \
     --no-gradient-accumulation-fusion \
     --no-bias-gelu-fusion \
     --no-bias-swiglu-fusion \
