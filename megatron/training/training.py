@@ -826,6 +826,11 @@ def train_step(forward_step_func, data_iterator,
             data_iterator = list(itertools.islice(data_iterator.iterable, args.micro_batch_size*get_num_microbatches()))
         # Forward pass.
         forward_backward_func = get_forward_backward_func()
+
+        from transformer_engine.pytorch.export import onnx_export, is_in_onnx_export_mode
+        NVTE_ONNX_EXPORT = os.environ.get("NVTE_ONNX_EXPORT", "0") == "1"
+        FORWARD_ONLY = NVTE_ONNX_EXPORT
+
         def fn(model):
             losses_reduced = forward_backward_func(
                 forward_step_func=forward_step_func,
@@ -835,30 +840,37 @@ def train_step(forward_step_func, data_iterator,
                 seq_length=args.seq_length,
                 micro_batch_size=args.micro_batch_size,
                 decoder_seq_length=args.decoder_seq_length,
-                forward_only=False
+                forward_only=FORWARD_ONLY  # Because TE only supports forward for now.
             )
             return losses_reduced
 
         dynamo = tg.USING_DYNAMO
+        tg.DYNAMO_TRACING = True
         # dynamo = False
-        if dynamo:
-            dirname = os.environ["TG_DUMP_DIRNAME"]
-            os.makedirs(dirname, exist_ok=True)
-            _, _, _, res = dynamo_and_dump(
-                model,
-                fn,
-                dirname=dirname,
-                formats=['code'],
-                rank=torch.distributed.get_rank(),
-                compile_model_or_fn="fn",
-                return_res=True,
-            )
-            losses_reduced = res
-            torch.distributed.barrier()
-            torch.distributed.destroy_process_group()
-            exit(0)
-        else:
-            losses_reduced = fn(model)
+        with onnx_export(enabled=NVTE_ONNX_EXPORT):
+            if dynamo:
+                # fn(model)
+                dirname = os.environ["TG_DUMP_DIRNAME"]
+                os.makedirs(dirname, exist_ok=True)
+                _, _, _, res = dynamo_and_dump(
+                    model,
+                    fn,
+                    dirname=dirname,
+                    formats=['code'],
+                    rank=torch.distributed.get_rank(),
+                    compile_model_or_fn="fn",
+                    return_res=True,
+                    forward_only=FORWARD_ONLY,
+                )
+                losses_reduced = res
+                torch.distributed.barrier()
+                if torch.distributed.get_rank() == 0:
+                    print("Dynamo Tracing Done!!!")
+                torch.distributed.destroy_process_group()
+                tg.DYNAMO_TRACING = False
+                exit(0)
+            else:
+                losses_reduced = fn(model)
 
     should_checkpoint, should_exit, exit_code = rerun_state_machine.should_checkpoint_and_exit()
     if should_exit:
@@ -1569,7 +1581,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # Run training step.
         args.curr_iteration = iteration
         ft_integration.on_training_step_start()
-        print(f"{train_data_iterator=}")
         loss_dict, skipped_iter, should_checkpoint, should_exit, exit_code, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                        train_data_iterator,

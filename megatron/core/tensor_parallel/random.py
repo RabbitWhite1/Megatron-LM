@@ -31,6 +31,8 @@ except ModuleNotFoundError:
     HAVE_TE = False
 
 
+import torchgraph as tg
+
 # Default name for the model parallel rng tracker.
 _MODEL_PARALLEL_RNG_TRACKER_NAME = 'model-parallel-rng'
 _EXPERT_PARALLEL_RNG_TRACKER_NAME = 'expert-parallel-rng'
@@ -282,6 +284,8 @@ def initialize_rng_tracker(
 def get_cuda_rng_tracker(use_te_rng_tracker=False, inference_rng_tracker=False):
     """Get cuda rng tracker."""
     initialize_rng_tracker(use_te_rng_tracker, inference_rng_tracker)
+    if tg.HACK_FOR_DYNAMO:
+        _CUDA_RNG_STATE_TRACKER._is_initialized = False
     return _CUDA_RNG_STATE_TRACKER
 
 

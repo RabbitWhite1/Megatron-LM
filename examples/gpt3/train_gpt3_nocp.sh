@@ -2,7 +2,7 @@
 
 # Runs the "345M" parameter model
 
-export CUDA_VISIBLE_DEVICES=6,7
+export CUDA_VISIBLE_DEVICES=4,5
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
@@ -10,12 +10,12 @@ GPUS_PER_NODE=`python -c "import os; print(os.environ['CUDA_VISIBLE_DEVICES'].co
 
 # Change for multinode config
 MASTER_ADDR=localhost
-MASTER_PORT=6000
+MASTER_PORT=6001
 NUM_NODES=1
 NODE_RANK=0
 GLOBAL_BATCH_SIZE=32
-CP_SIZE=2
-TP_SIZE=1
+CP_SIZE=1
+TP_SIZE=2
 PP_SIZE=1
 DP_SIZE=$(($GPUS_PER_NODE / ($CP_SIZE * $TP_SIZE * $PP_SIZE) * $NUM_NODES))
 # GPUS_PER_NODE=$(($DP_SIZE*$TP_SIZE*$PP_SIZE))
@@ -34,6 +34,13 @@ DISTRIBUTED_ARGS=(
     --master_port $MASTER_PORT
 )
 
+export NVTE_FLASH_ATTN=1
+export NVTE_FUSED_ATTN=0
+export NVTE_UNFUSED_ATTN=0
+
+export NVTE_DEBUG=1
+export NVTE_DEBUG_LEVEL=2 
+
 GPT_MODEL_ARGS=(
     --num-layers 1 
     --hidden-size 1536 
@@ -41,9 +48,9 @@ GPT_MODEL_ARGS=(
     --seq-length 1024 
     --max-position-embeddings 2048 
     --fp16
-    --use-flash-attn
+    # --use-flash-attn
     --attention-backend flash # Can use (flash/fused/unfused/local)
-    --transformer-impl transformer_engine
+    --transformer-impl local
     # --deterministic-mode
 )
 
@@ -104,10 +111,13 @@ export NCCL_DEBUG=WARN  # INFO/WARN
 # export NCCL_DEBUG_SUBSYS=COLL
 # export TORCH_DISTRIBUTED_DEBUG=INFO # INFO/WARN
 
+# Config Transformer Engine
+export NVTE_TORCH_COMPILE=0  # Disable any jit.
+
 # DYNAMO
 export TORCHDYNAMO_EXTENDED_DEBUG_CPP=1
 export TORCHDYNAMO_VERBOSE=1
-export DYNAMO_LOG_LEVEL=WARN
+export DYNAMO_LOG_LEVEL=DEBUG
 
 export DYNAMO_SUPPRESS_ERRORS=0
 export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
@@ -126,11 +136,8 @@ export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}-cp${CP_SIZE}
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
 export CUDA_LAUNCH_BLOCKING=1
 
-export NVTE_FLASH_ATTN=1
-export NVTE_FUSED_ATTN=0
-export NVTE_UNFUSED_ATTN=0
 
-NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=2 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
+torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     ${GPT_MODEL_ARGS[@]} \
     ${TRAINING_ARGS[@]} \
     ${MODEL_PARALLEL_ARGS[@]} \

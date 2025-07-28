@@ -594,7 +594,7 @@ class TransformerBlock(MegatronModule):
                         hidden_states = self.group_prefetch_offload_commit_async(hidden_states)
 
         # Final layer norm.
-        if self.final_layernorm is not None:
+        if not tg.HACK_FOR_DYNAMO and self.final_layernorm is not None:
             hidden_states = self.final_layernorm(hidden_states)
             # TENorm produces a "viewed" tensor. This will result in schedule.py's
             # deallocate_output_tensor() throwing an error, so a viewless tensor is

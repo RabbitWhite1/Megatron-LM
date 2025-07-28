@@ -8,6 +8,8 @@ import torch.nn as nn
 from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.utils import get_default_causal_mask
 
+import torchgraph as tg
+
 
 class ScaledUpperTriangMaskedSoftmax(torch.autograd.Function):
     """
@@ -142,7 +144,7 @@ class FusedScaleMaskSoftmax(nn.Module):
         # [b, np, sq, sk]
         assert input.dim() == 4
 
-        if self.is_kernel_available(mask, *input.size()):
+        if not tg.HACK_FOR_DYNAMO and self.is_kernel_available(mask, *input.size()):
             return self.forward_fused_softmax(input, mask)
         else:
             return self.forward_torch_softmax(input, mask)
