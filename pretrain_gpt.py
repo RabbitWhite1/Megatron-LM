@@ -210,6 +210,7 @@ def loss_func(loss_mask: torch.Tensor, output_tensor: torch.Tensor):
     torch.distributed.all_reduce(reporting_loss, group=mpu.get_data_parallel_group())
 
     local_num_tokens = loss[1].clone().detach().to(torch.int)
+    # print(f"{loss[0]=}, {args.context_parallel_size=}, {local_num_tokens=}, {loss[0] * args.context_parallel_size=}")
     return (
         loss[0] * args.context_parallel_size,
         local_num_tokens,

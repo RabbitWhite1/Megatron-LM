@@ -829,7 +829,6 @@ def train_step(forward_step_func, data_iterator,
 
         from transformer_engine.pytorch.export import onnx_export, is_in_onnx_export_mode
         NVTE_ONNX_EXPORT = os.environ.get("NVTE_ONNX_EXPORT", "0") == "1"
-        FORWARD_ONLY = NVTE_ONNX_EXPORT
 
         def fn(model):
             losses_reduced = forward_backward_func(
@@ -840,7 +839,7 @@ def train_step(forward_step_func, data_iterator,
                 seq_length=args.seq_length,
                 micro_batch_size=args.micro_batch_size,
                 decoder_seq_length=args.decoder_seq_length,
-                forward_only=FORWARD_ONLY  # Because TE only supports forward for now.
+                forward_only=False  # Because TE only supports forward for now.
             )
             return losses_reduced
 
@@ -860,7 +859,7 @@ def train_step(forward_step_func, data_iterator,
                     rank=torch.distributed.get_rank(),
                     compile_model_or_fn="fn",
                     return_res=True,
-                    forward_only=FORWARD_ONLY,
+                    forward_only=False,
                 )
                 losses_reduced = res
                 torch.distributed.barrier()

@@ -115,7 +115,7 @@ export NVTE_TORCH_COMPILE=0  # Disable any jit.
 # DYNAMO
 export TORCHDYNAMO_EXTENDED_DEBUG_CPP=1
 export TORCHDYNAMO_VERBOSE=1
-export DYNAMO_LOG_LEVEL=DEBUG
+export DYNAMO_LOG_LEVEL=WARN
 
 export DYNAMO_SUPPRESS_ERRORS=0
 export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
@@ -150,6 +150,7 @@ NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=2 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py 
     --no-bias-swiglu-fusion \
     --no-bias-dropout-fusion \
     --no-async-tensor-model-parallel-allreduce \
+    --disable-bias-linear \
     --disable-tp-comm-overlap-ag \
     --disable-tp-comm-overlap-rs \
     --disable-tp-comm-split-ag \
