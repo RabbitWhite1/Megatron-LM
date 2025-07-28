@@ -659,7 +659,8 @@ class TEDotProductAttention(te.pytorch.DotProductAttention):
 
         # This check is important as CP config can be disabled while having a valid CP group
         # Example - Disabling CP for encoder while a valid CP group exists for decoder
-        if self.config.context_parallel_size > 1:
+        FORCE_CP_WHEN_SIZE_IS_ONE = os.getenv('FORCE_CP_WHEN_SIZE_IS_ONE', '0') == '1'
+        if FORCE_CP_WHEN_SIZE_IS_ONE or self.config.context_parallel_size > 1:
             assert is_te_min_version(
                 "1.0.0"
             ), "Only Transformer-Engine version >= 1.0.0 supports context parallelism!"
