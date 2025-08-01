@@ -5,6 +5,8 @@ import torch
 
 from megatron.core.jit import jit_fuser
 
+import torchgraph as tg
+
 
 def _bias_dropout_add_func(x_with_bias, residual, prob, training):
     # type: (Tuple[Tensor, Optional[Tensor]], Tensor, float, bool) -> Tensor
@@ -29,11 +31,17 @@ def _bias_dropout_add_func(x_with_bias, residual, prob, training):
     # the conditional branch to improve performance
     if bias is not None:
         x = x + bias
-        out = torch.nn.functional.dropout(x, p=prob, training=training)
+        if not tg.HACK_FOR_DYNAMO:
+            out = torch.nn.functional.dropout(x, p=prob, training=training)
+        else:
+            out = x
         out = residual + out
         return out
     else:
-        out = torch.nn.functional.dropout(x, p=prob, training=training)
+        if not tg.HACK_FOR_DYNAMO:
+            out = torch.nn.functional.dropout(x, p=prob, training=training)
+        else:
+            out = x
         out = residual + out
         return out
 

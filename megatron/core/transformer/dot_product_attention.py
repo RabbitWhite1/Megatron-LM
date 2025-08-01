@@ -178,7 +178,7 @@ class DotProductAttention(MegatronModule):
             with tensor_parallel.get_cuda_rng_tracker().fork():
                 attention_probs = self.attention_dropout(attention_probs)
         else:
-            attention_probs = self.attention_dropout(attention_probs)
+            attention_probs = attention_probs
 
         # =========================
         # Context layer. [sq, b, hp]

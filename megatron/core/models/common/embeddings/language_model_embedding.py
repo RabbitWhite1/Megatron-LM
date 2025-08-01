@@ -139,11 +139,14 @@ class LanguageModelEmbedding(MegatronModule):
             if self.config.clone_scatter_output_in_embedding and self.scatter_to_sequence_parallel:
                 embeddings = embeddings.clone()
             if tg.HACK_FOR_DYNAMO:  # XXX: remove rng.
-                embeddings = self.embedding_dropout(embeddings)
+                embeddings = embeddings
             else:
                 with tensor_parallel.get_cuda_rng_tracker().fork():
                     embeddings = self.embedding_dropout(embeddings)
         else:
-            embeddings = self.embedding_dropout(embeddings)
+            if tg.HACK_FOR_DYNAMO:
+                embeddings = embeddings
+            else:
+                embeddings = self.embedding_dropout(embeddings)
 
         return embeddings

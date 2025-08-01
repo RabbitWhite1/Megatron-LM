@@ -2,7 +2,7 @@
 
 # Runs the "345M" parameter model
 
-export CUDA_VISIBLE_DEVICES=4
+export CUDA_VISIBLE_DEVICES=6,7
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
@@ -161,4 +161,5 @@ NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=2 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py 
     --disable-tp-comm-bulk-wgrad \
     --no-check-for-nan-in-loss-and-grad \
     --no-align-grad-reduce \
-    --distributed-timeout-minutes 1
+    --distributed-timeout-minutes 1 \
+    --calculate-per-token-loss
