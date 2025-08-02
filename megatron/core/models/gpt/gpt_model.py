@@ -1,6 +1,7 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 from collections import OrderedDict
+import os
 from typing import Dict, Literal, Optional
 
 import torch
@@ -154,6 +155,9 @@ class GPTModel(LanguageModule):
                 self.embedding_activation_buffer = None
                 self.grad_output_buffer = None
 
+            FORCE_DISABLE_GRAD_REDUCE_FOR_OUTPUT_LAYER = os.environ.get(
+                'FORCE_DISABLE_GRAD_REDUCE_FOR_OUTPUT_LAYER', '0'
+            ) == '1'
             self.output_layer = tensor_parallel.ColumnParallelLinear(
                 config.hidden_size,
                 self.vocab_size,
@@ -166,6 +170,7 @@ class GPTModel(LanguageModule):
                 and self.share_embeddings_and_output_weights,
                 embedding_activation_buffer=self.embedding_activation_buffer,
                 grad_output_buffer=self.grad_output_buffer,
+                disable_grad_reduce=FORCE_DISABLE_GRAD_REDUCE_FOR_OUTPUT_LAYER,
             )
 
         if self.pre_process or self.post_process:

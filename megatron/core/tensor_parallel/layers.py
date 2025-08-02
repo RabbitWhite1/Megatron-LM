@@ -500,7 +500,9 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         if ctx.allreduce_dgrad:
             # Asynchronous all-reduce
             if tg.HACK_FOR_DYNAMO:
-                handle = fdist.all_reduce(grad_input, reduceOp="sum", group=get_tensor_model_parallel_group())
+                grad_input = fdist.all_reduce(grad_input, reduceOp="sum", group=get_tensor_model_parallel_group())
+                handle = None
+                # grad_input = fdist.wait_tensor(handle); handle = None
             else:
                 handle = torch.distributed.all_reduce(
                     grad_input, group=get_tensor_model_parallel_group(), async_op=True
@@ -518,7 +520,8 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
             )
             # reduce_scatter
             if tg.HACK_FOR_DYNAMO:
-                handle = fdist.reduce_scatter_tensor(grad_input, reduceOp="sum", scatter_dim=0, group=get_tensor_model_parallel_group())
+                sub_grad_input = fdist.reduce_scatter_tensor(grad_input, reduceOp="sum", scatter_dim=0, group=get_tensor_model_parallel_group())
+                handle = None
             else:
                 handle = dist_reduce_scatter_func(
                     sub_grad_input, grad_input, group=get_tensor_model_parallel_group(), async_op=True
@@ -568,7 +571,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         if ctx.sequence_parallel:
             if is_fdist_handle(handle):
                 sub_grad_input = fdist.wait_tensor(handle)
-            elif type(handle) is not torch.Tensor:
+            elif handle is not None and type(handle) is not torch.Tensor:
                 handle.wait()
             # Need to return None's as gradient has to flow for all the input arguments
             # provided during forward
@@ -577,7 +580,7 @@ class LinearWithGradAccumulationAndAsyncCommunication(torch.autograd.Function):
         if ctx.allreduce_dgrad:
             if is_fdist_handle(handle):
                 grad_input = fdist.wait_tensor(handle)
-            elif type(handle) is not torch.Tensor:
+            elif handle is not None and type(handle) is not torch.Tensor:
                 handle.wait()
 
         return grad_input, grad_weight, grad_bias, None, None, None, None, None

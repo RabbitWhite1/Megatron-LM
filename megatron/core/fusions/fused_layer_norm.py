@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import numbers
+import os
 
 import torch
 from torch import Tensor
@@ -118,8 +119,12 @@ class FusedLayerNorm(torch.nn.Module):
         self.sequence_parallel = self.config.sequence_parallel
 
         # set sequence parallelism flag on weight and bias parameters
-        setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
-        setattr(self.bias, 'sequence_parallel', self.sequence_parallel)
+        FORCE_FORGET_SP_LAYERNORM_ALLREDUCE = os.environ.get(
+            "FORCE_FORGET_SP_LAYERNORM_ALLREDUCE", "0"
+        ) == "1"
+        if not FORCE_FORGET_SP_LAYERNORM_ALLREDUCE:
+            setattr(self.weight, 'sequence_parallel', self.sequence_parallel)
+            setattr(self.bias, 'sequence_parallel', self.sequence_parallel)
 
     def reset_parameters(self):
 

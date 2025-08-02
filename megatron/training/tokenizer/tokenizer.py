@@ -17,6 +17,9 @@ from .gpt2_tokenization import GPT2Tokenizer
 from megatron.training.tokenizer.multimodal_tokenizer import MultimodalTokenizer
 
 
+import torchgraph as tg
+
+
 def build_tokenizer(args, **kwargs):
     """Initialize tokenizer."""
     if args.rank == 0:
@@ -106,6 +109,8 @@ def _vocab_size_with_padding(orig_vocab_size, args, logging_enabled=True):
     """Pad vocab size so it is divisible by model parallel size and
     still having GPU friendly size."""
 
+    if tg.HACK_FOR_DYNAMO:
+        return 98304
     after = orig_vocab_size
     multiple = args.make_vocab_size_divisible_by * args.tensor_model_parallel_size
     after = int(math.ceil(after / multiple) * multiple)

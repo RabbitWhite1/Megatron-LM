@@ -8,6 +8,16 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 GPUS_PER_NODE=`python -c "import os; print(os.environ['CUDA_VISIBLE_DEVICES'].count(',' ) + 1)"`
 
+
+# BUGS
+export FORCE_DISABLE_GRAD_REDUCE_FOR_OUTPUT_LAYER=0
+export FORCE_FORGET_SP_LAYERNORM_ALLREDUCE=1
+if [ "$FORCE_FORGET_SP_LAYERNORM_ALLREDUCE" -eq 1 ]; then
+    SEQUENCE_PARALLEL="--sequence-parallel"
+else
+    SEQUENCE_PARALLEL=""
+fi
+
 # Change for multinode config
 MASTER_ADDR=localhost
 MASTER_PORT=6001
@@ -52,6 +62,8 @@ GPT_MODEL_ARGS=(
     --attention-backend flash # Can use (flash/fused/unfused/local)
     --transformer-impl local
     # --deterministic-mode
+    --qk-layernorm
+    $SEQUENCE_PARALLEL
 )
 
 TRAINING_ARGS=(
@@ -136,7 +148,6 @@ export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}-cp${CP_SIZE}
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
 export CUDA_LAUNCH_BLOCKING=1
 
-
 torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     ${GPT_MODEL_ARGS[@]} \
     ${TRAINING_ARGS[@]} \
@@ -147,7 +158,6 @@ torchrun ${DISTRIBUTED_ARGS[@]} pretrain_gpt.py \
     --no-bias-gelu-fusion \
     --no-bias-swiglu-fusion \
     --no-bias-dropout-fusion \
-    --no-async-tensor-model-parallel-allreduce \
     --disable-tp-comm-overlap-ag \
     --disable-tp-comm-overlap-rs \
     --disable-tp-comm-split-ag \
