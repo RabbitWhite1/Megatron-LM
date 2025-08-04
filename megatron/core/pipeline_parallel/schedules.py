@@ -304,15 +304,16 @@ def forward_step(
     # Set the loss scale for the auxiliary loss of the MoE layer.
     # Since we use a trick to do backward on the auxiliary loss, we need to set the scale
     # explicitly.
-    if hasattr(config, 'num_moe_experts') and config.num_moe_experts is not None:
-        # Calculate the loss scale based on the grad_scale_func if available, else default to 1.
-        loss_scale = (
-            config.grad_scale_func(torch.ones(1, device=output_tensor.device))
-            if config.grad_scale_func is not None
-            else torch.tensor(1.0)
-        )
-        # Set the loss scale
-        MoEAuxLossAutoScaler.set_loss_scale(loss_scale / num_microbatches)
+    if not tg.HACK_FOR_DYNAMO:
+        if hasattr(config, 'num_moe_experts') and config.num_moe_experts is not None:
+            # Calculate the loss scale based on the grad_scale_func if available, else default to 1.
+            loss_scale = (
+                config.grad_scale_func(torch.ones(1, device=output_tensor.device))
+                if config.grad_scale_func is not None
+                else torch.tensor(1.0)
+            )
+            # Set the loss scale
+            MoEAuxLossAutoScaler.set_loss_scale(loss_scale / num_microbatches)
 
     # If T5 model and in decoder stack, then send encoder_hidden_state
     # downstream as well.

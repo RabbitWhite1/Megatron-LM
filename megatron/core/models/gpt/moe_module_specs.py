@@ -1,5 +1,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
+import os
 import warnings
 from typing import Optional
 
@@ -22,6 +23,9 @@ try:
     HAVE_TE = True
 except ImportError:
     HAVE_TE = False
+
+
+from megatron.legacy.model.transformer import SwitchMLP
 
 
 def get_moe_module_spec(
@@ -75,7 +79,13 @@ def get_moe_module_spec(
     shared_experts = ModuleSpec(module=SharedExpertMLP, params={"gate": False}, submodules=mlp)
 
     # MoE module spec
-    moe_module_spec = ModuleSpec(
-        module=MoELayer, submodules=MoESubmodules(experts=experts, shared_experts=shared_experts)
-    )
+    FORCE_USING_SWITCHMLP = os.environ.get("FORCE_USING_SWITCHMLP", "0")
+    if FORCE_USING_SWITCHMLP == "1":
+        moe_module_spec = ModuleSpec(
+            module=SwitchMLP, submodules=MoESubmodules(experts=experts, shared_experts=shared_experts)
+        )
+    else:
+        moe_module_spec = ModuleSpec(
+            module=MoELayer, submodules=MoESubmodules(experts=experts, shared_experts=shared_experts)
+        )
     return moe_module_spec

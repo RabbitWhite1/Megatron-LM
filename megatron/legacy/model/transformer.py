@@ -175,7 +175,9 @@ class ParallelMLP(MegatronModule):
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
         return output, output_bias
 
-def sinkhorn(cost, tol=0.0001):
+
+@torch.library.custom_op("megatron::sinkhorn", mutates_args=())
+def sinkhorn(cost: torch.Tensor, tol: float = 0.0001) -> torch.Tensor:
     cost = torch.exp(cost)
     d0 = torch.ones(cost.size(0), device=cost.device, dtype=cost.dtype)
     d1 = torch.ones(cost.size(1), device=cost.device, dtype=cost.dtype)
@@ -191,6 +193,16 @@ def sinkhorn(cost, tol=0.0001):
     return d1*cost*d0.unsqueeze(1)
 
 
+@sinkhorn.register_fake
+def fake_sinkhorn(cost: torch.Tensor, tol: float = 0.0001) -> torch.Tensor:
+    """Fake sinkhorn for testing purposes."""
+    # This is a fake implementation that just returns the input cost.
+    # It is used to test the custom op registration and should not be used in production.
+    d0 = torch.ones(cost.size(0), device=cost.device, dtype=cost.dtype)
+    d1 = torch.ones(cost.size(1), device=cost.device, dtype=cost.dtype)
+    return d1*torch.empty_like(cost)*d0.unsqueeze(1)
+
+
 def get_router_linear_layer(config):
     args = get_args()
     router = torch.nn.Linear(args.hidden_size, args.num_experts, bias=False)
@@ -204,7 +216,7 @@ class SwitchMLP(MegatronModule):
     """
     Routes input to one of N MLP "experts"
     """
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         super(SwitchMLP, self).__init__()
         args = get_args()
         self.router = get_router_linear_layer(config)
@@ -247,7 +259,8 @@ class SwitchMLP(MegatronModule):
         s = hidden_states.size(0)
         b = hidden_states.size(1)
         h = hidden_states.size(2)
-        route = self.router(hidden_states).view(-1, args.num_experts)
+        route = self.router(hidden_states)
+        route = route.view(-1, args.num_experts)
 
         # TODO (rprenger) Right now we're just using the sinkhorn algorithm
         # for load balancing. There should be an option to do no load balancing

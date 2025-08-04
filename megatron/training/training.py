@@ -104,6 +104,7 @@ from . import ft_integration
 import itertools
 import torchgraph as tg
 from torchgraph.graph.dynamo.tools import dynamo_and_dump
+from megatron.core.transformer.moe.router import MoEAuxLossAutoScaler
 
 stimer = StragglerDetector()
 
@@ -848,6 +849,19 @@ def train_step(forward_step_func, data_iterator,
         # dynamo = False
         with onnx_export(enabled=NVTE_ONNX_EXPORT):
             if dynamo:
+                torch._dynamo.config.capture_dynamic_output_shape_ops = True
+                if tg.HACK_FOR_DYNAMO:
+                    # XXX: This is originally in `forward_setp`, but it will introduce graph break when we
+                    # use dynamo. Since it can actually be done before forward, I moved it here.
+                    if hasattr(config, 'num_moe_experts') and config.num_moe_experts is not None:
+                        # Calculate the loss scale based on the grad_scale_func if available, else default to 1.
+                        loss_scale = (
+                            config.grad_scale_func(torch.ones(1, device=torch.cuda.current_device()))
+                            if config.grad_scale_func is not None
+                            else torch.tensor(1.0)
+                        )
+                        # Set the loss scale
+                        MoEAuxLossAutoScaler.set_loss_scale(loss_scale / get_num_microbatches())
                 # fn(model)
                 dirname = os.environ["TG_DUMP_DIRNAME"]
                 os.makedirs(dirname, exist_ok=True)

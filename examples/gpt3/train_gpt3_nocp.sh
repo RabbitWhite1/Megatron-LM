@@ -2,7 +2,7 @@
 
 # Runs the "345M" parameter model
 
-export CUDA_VISIBLE_DEVICES=6
+export CUDA_VISIBLE_DEVICES=6,7
 
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
@@ -11,11 +11,19 @@ GPUS_PER_NODE=`python -c "import os; print(os.environ['CUDA_VISIBLE_DEVICES'].co
 
 # BUGS
 export FORCE_DISABLE_GRAD_REDUCE_FOR_OUTPUT_LAYER=0
-export FORCE_FORGET_SP_LAYERNORM_ALLREDUCE=1
+export FORCE_FORGET_SP_LAYERNORM_ALLREDUCE=0
 if [ "$FORCE_FORGET_SP_LAYERNORM_ALLREDUCE" -eq 1 ]; then
     SEQUENCE_PARALLEL="--sequence-parallel"
 else
     SEQUENCE_PARALLEL=""
+fi
+export FORCE_FORGET_SP_SWITCHMLP_ALLREDUCE=1
+export FORCE_USING_SWITCHMLP=1
+if [ "$FORCE_FORGET_SP_SWITCHMLP_ALLREDUCE" -eq 1 ]; then
+    # SWITCHMLP_ARGS="--num-experts 1 --sequence-parallel --use-legacy-models --ckpt-format torch"
+    SWITCHMLP_ARGS="--num-experts 1 --sequence-parallel "
+else
+    SWITCHMLP_ARGS=""
 fi
 
 # Change for multinode config
@@ -63,7 +71,10 @@ GPT_MODEL_ARGS=(
     --transformer-impl local
     # --deterministic-mode
     --qk-layernorm
+    --disable-bias-linear
     $SEQUENCE_PARALLEL
+
+    $SWITCHMLP_ARGS
 )
 
 TRAINING_ARGS=(

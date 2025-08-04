@@ -13,6 +13,7 @@ from megatron.core.utils import is_torch_min_version
 from .utils import split_tensor_along_last_dim
 
 import torchgraph as tg
+import torch.distributed._functional_collectives as fdist
 
 if is_torch_min_version("1.13.0"):
     dist_all_gather_func = torch.distributed.all_gather_into_tensor
@@ -184,25 +185,27 @@ def _reduce_scatter_along_first_dim(
         dim_size[0] = dim_size[0] // world_size
 
         if tg.HACK_FOR_DYNAMO:
-            output = torch.empty(dim_size, dtype=input_.dtype, device=input_.device)
-        elif use_global_buffer:
-            output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
+            output = fdist.reduce_scatter_tensor(input_.contiguous(), reduceOp="sum", scatter_dim=0, group=group)
         else:
-            output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
-        dist_reduce_scatter_func(output, input_.contiguous(), group=group)
+            if use_global_buffer:
+                output = get_global_memory_buffer().get_tensor(dim_size, input_.dtype, "mpu")
+            else:
+                output = torch.empty(dim_size, dtype=input_.dtype, device=torch.cuda.current_device())
+            dist_reduce_scatter_func(output, input_.contiguous(), group=group)
     else:
         rank = torch.distributed.get_rank(group)
         input_tensor_list = list(torch.split(input_, input_split_sizes, dim=0))
-
         if tg.HACK_FOR_DYNAMO:
-            output = torch.empty_like(input_tensor_list[rank])
-        elif use_global_buffer:
-            output = get_global_memory_buffer().get_tensor(
-                input_tensor_list[rank].shape, input_.dtype, "mpu"
-            )
+            output = fdist.reduce_scatter_tensor_coalesced(input_tensor_list, reduceOp="sum", scatter_dim=0, group=group)
+            output = torch.cat(output, dim=0)
         else:
-            output = torch.empty_like(input_tensor_list[rank])
-        torch.distributed.reduce_scatter(output, input_tensor_list, group=group)
+            if use_global_buffer:
+                output = get_global_memory_buffer().get_tensor(
+                    input_tensor_list[rank].shape, input_.dtype, "mpu"
+                )
+            else:
+                output = torch.empty_like(input_tensor_list[rank])
+            torch.distributed.reduce_scatter(output, input_tensor_list, group=group)
     return output
 
 
