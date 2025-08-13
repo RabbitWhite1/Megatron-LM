@@ -232,6 +232,11 @@ def forward_step(data_iterator, model: GPTModel):
         tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
             data_iterator)
         # torch._dynamo.graph_break(msg="break at batch preprocessing.")
+        tg.inplace_log_tensor(tokens, "tokens")
+        tg.inplace_log_tensor(labels, "labels")
+        tg.inplace_log_tensor(loss_mask, "loss_mask")
+        tg.inplace_log_tensor(attention_mask, "attention_mask")
+        tg.inplace_log_tensor(position_ids, "position_ids")
         for name, param in model.named_parameters():
             tg.inplace_log_tensor(param, name)
         output_tensor = model(tokens, position_ids, attention_mask,

@@ -485,17 +485,6 @@ def get_batch_on_this_tp_rank(data_iterator):
             batch['attention_mask'] = _broadcast(batch['attention_mask'])
 
     else:
-        # tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        # labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-        # loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
-        # if args.create_attention_mask_in_dataloader:
-        #     attention_mask=torch.empty(
-        #             (args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device()
-        #         )
-        # else:
-        #     attention_mask=None
-        # position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
-
         if tg.HACK_FOR_DYNAMO:
             if data_iterator is not None:
                 if tg.HACK_FOR_DYNAMO:
@@ -516,6 +505,19 @@ def get_batch_on_this_tp_rank(data_iterator):
             loss_mask = tg.log_tensor(loss_mask, "loss_mask")
             attention_mask = tg.log_tensor(attention_mask, "attention_mask")
             position_ids = tg.log_tensor(position_ids, "position_ids")
+        else:
+            tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+            labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+            loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
+            if args.create_attention_mask_in_dataloader:
+                attention_mask=torch.empty(
+                        (args.micro_batch_size,1,args.seq_length,args.seq_length), dtype = torch.bool , device = torch.cuda.current_device()
+                    )
+            else:
+                attention_mask=None
+            position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
+
+
 
         if args.pipeline_model_parallel_size == 1:
             tokens = _broadcast(tokens)

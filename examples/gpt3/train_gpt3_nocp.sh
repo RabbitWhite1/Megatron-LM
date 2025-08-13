@@ -17,14 +17,21 @@ if [ "$FORCE_FORGET_SP_LAYERNORM_ALLREDUCE" -eq 1 ]; then
 else
     SEQUENCE_PARALLEL=""
 fi
-export FORCE_FORGET_SP_SWITCHMLP_ALLREDUCE=1
-export FORCE_USING_SWITCHMLP=1
+export FORCE_FORGET_SP_SWITCHMLP_ALLREDUCE=0
+export FORCE_USING_SWITCHMLP=0
 if [ "$FORCE_FORGET_SP_SWITCHMLP_ALLREDUCE" -eq 1 ]; then
     # SWITCHMLP_ARGS="--num-experts 1 --sequence-parallel --use-legacy-models --ckpt-format torch"
     SWITCHMLP_ARGS="--num-experts 1 --sequence-parallel "
 else
     SWITCHMLP_ARGS=""
 fi
+
+# These two lines for dumping correct graph.
+# export FORCE_USING_SWITCHMLP=1
+# SWITCHMLP_ARGS="--num-experts 1 --sequence-parallel "
+
+# This is for testing sinkhorn behavior when enabling sequence-parallel.
+# SWITCHMLP_ARGS="--num-experts 4 --sequence-parallel --moe-router-topk 2 --moe-router-load-balancing-type sinkhorn"
 
 # Change for multinode config
 MASTER_ADDR=localhost
@@ -154,7 +161,7 @@ export TG_USE_COMPILER_DISABLE=0
 export TG_USING_DYNAMO=1
 export TG_HACK_FOR_DYNAMO=1
 
-export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}-tp${TP_SIZE}-cp${CP_SIZE}
+export TG_DUMP_DIRNAME=gpt/dp${DP_SIZE}_tp${TP_SIZE}_cp${CP_SIZE}
 
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=30
 export CUDA_LAUNCH_BLOCKING=1
